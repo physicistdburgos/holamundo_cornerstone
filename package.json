@@ -1,0 +1,23 @@
+{
+  "name": "cornerstone_pruebas",
+  "version": "1.0.0",
+  "description": "Basic cornerstone.js medical imaging viewer",
+  "main": "index.js",
+  "scripts": {
+    "start": "webpack serve --open",
+    "build": "webpack"
+  },
+  "dependencies": {
+    "cornerstone-core": "^2.6.1",
+    "cornerstone-tools": "^6.0.10",
+    "cornerstone-wado-image-loader": "^4.13.3",
+    "dicom-parser": "^1.8.22"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "webpack": "^5.91.0",
+    "webpack-cli": "^5.1.4",
+    "webpack-dev-server": "^5.0.4",
+    "ts-loader": "^9.5.1"
+  }
+}
