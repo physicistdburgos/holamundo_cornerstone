@@ -2,99 +2,126 @@ import * as cornerstone from 'cornerstone-core';
 import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
 import * as dicomParser from 'dicom-parser';
 
+// 1) Enlazar externals (suficiente para que el loader se integre con cornerstone)
 cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
 cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
 
-// (Optional but good) initialize web workers for speed
+// 2) Inicializar Web Workers + codecs desde /public/dist (copiado desde node_modules)
+cornerstoneWADOImageLoader.webWorkerManager.initialize({
+  maxWebWorkers: Math.min(2, (navigator.hardwareConcurrency || 2)),
+  startWebWorkersOnDemand: true,
+  webWorkerPath: '/dist/index.worker.min.worker.js',
+  taskConfiguration: {
+    decodeTask: {
+      initializeCodecsOnStartup: true,
+      codecsPath: '/dist',   // aquí están los .wasm y workers auxiliares
+      usePDFJS: false,
+    },
+  },
+});
 
-const element = document.getElementById('dicomImage');
-if (!element) throw new Error("Element not found");
-cornerstone.enable(element);
+console.log("Iniciando aplicación...");
 
-// Build imageIds from your numbered files
-const totalSlices = 89;
-const imageIds: string[] = [];
-for (let i = 1; i <= totalSlices; i++) {
-  const sliceNumber = i.toString().padStart(3, '0');  // 001.dcm ... 089.dcm
-  imageIds.push(`wadouri:/solo_CTs/${sliceNumber}.dcm`);
+async function init() {
+  const baseUrl  = "/dicom-web";
+  const studyUID = "1.2.826.0.1.3680043.8.498.48565534201860650768733179605548160981";
+
+  try {
+    // 1) Buscar serie CT
+    const seriesRes  = await fetch(`${baseUrl}/studies/${encodeURIComponent(studyUID)}/series?includefield=00080060,0020000E`);
+    const seriesList = await seriesRes.json();
+    const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "CT");
+    if (!ctSeries) throw new Error("No se encontró una serie CT.");
+    const seriesUID  = ctSeries["0020000E"].Value[0];
+
+    // 2) Instancias de la serie
+    const instRes  = await fetch(`${baseUrl}/studies/${encodeURIComponent(studyUID)}/series/${encodeURIComponent(seriesUID)}/instances`);
+    const instList = await instRes.json();
+    if (!instList.length) throw new Error("La serie CT no contiene imágenes.");
+
+    // 3) Filtrar por metadatos: requiere 7FE0,0010 PixelData + filas/columnas/etc.
+    const candidates: string[] = [];
+    for (const inst of instList) {
+      const sopUID = inst["00080018"]?.Value?.[0];
+      if (!sopUID) continue;
+
+      const metaUrl = `${baseUrl}/studies/${encodeURIComponent(studyUID)}/series/${encodeURIComponent(seriesUID)}/instances/${encodeURIComponent(sopUID)}/metadata`;
+      const metaRes = await fetch(metaUrl);
+      const metadata = await metaRes.json();
+
+      if (!Array.isArray(metadata) || metadata.length === 0) continue;
+      const t = metadata[0];
+
+      const rows            = t["00280010"]?.Value?.[0];
+      const columns         = t["00280011"]?.Value?.[0];
+      const samplesPerPixel = t["00280002"]?.Value?.[0];
+      const bitsAllocated   = t["00280100"]?.Value?.[0];
+      const pixelDataTag    = t["7FE00010"];
+      const hasBulkData     = !!pixelDataTag && (pixelDataTag.BulkDataURI || pixelDataTag.InlineBinary);
+
+      if (rows !== undefined && columns !== undefined && samplesPerPixel !== undefined && bitsAllocated !== undefined && hasBulkData) {
+        candidates.push(sopUID);
+      }
+    }
+
+    if (!candidates.length) throw new Error("No hay instancias con PixelData (7FE0,0010) accesible por DICOMweb.");
+
+    // 4) Mostrar alguna candidata (primero WADO-URI, si falla WADO-RS)
+    const element = document.getElementById("dicomImage") as HTMLDivElement;
+    cornerstone.enable(element);
+
+    let currentIndex = -1;
+    for (let i = 0; i < candidates.length; i++) {
+      const ok = await tryURIthenRS(element, studyUID, seriesUID, candidates[i]);
+      if (ok) { currentIndex = i; break; }
+    }
+    if (currentIndex < 0) throw new Error("Ninguna candidata pudo decodificarse/mostrarse.");
+
+    // 5) Navegación con rueda
+    element.addEventListener("wheel", async (e) => {
+      e.preventDefault();
+      if (candidates.length < 2) return;
+      currentIndex += e.deltaY > 0 ? 1 : -1;
+      if (currentIndex < 0) currentIndex = 0;
+      if (currentIndex >= candidates.length) currentIndex = candidates.length - 1;
+      await tryURIthenRS(element, studyUID, seriesUID, candidates[currentIndex]);
+    });
+
+  } catch (e) {
+    console.error("Fallo en init():", e);
+  }
 }
 
-// helper: tolerant compare
-const nearly = (a: number, b: number, eps = 1e-3) => Math.abs(a - b) < eps;
-
-// Load-and-cache all (so metadata is available), then read the right keys
-Promise.all(
-  imageIds.map(id =>
-    cornerstone.loadAndCacheImage(id).then((img: any) => {
-      const ipm = cornerstone.metaData.get('imagePlaneModule', id) as any | undefined;
-      // Fallbacks if needed (rare):
-      // const iop = cornerstone.metaData.get('x00200037', id); // image orientation patient
-      // const ipp = cornerstone.metaData.get('x00200032', id); // image position patient
-
-      const orientation = ipm?.imageOrientationPatient;    // [r1,r2,r3,c1,c2,c3]
-      const position    = ipm?.imagePositionPatient;       // [x,y,z]
-
-      return { id, orientation, position };
-    })
-  )
-).then(imagesInfo => {
-  // Determine plane for each image (axial/coronal/sagittal) using direction cosines
-  imagesInfo.forEach(info => {
-    const ori = info.orientation as number[] | undefined;
-    if (!ori || ori.length !== 6) {
-      (info as any).plane = 'Unknown';
-      return;
-    }
-    const [r1, r2, r3, c1, c2, c3] = ori;
-
-    // Typical cosines (tolerant):
-    // Axial:    row≈[1,0,0], col≈[0,1,0]
-    // Coronal:  row≈[1,0,0], col≈[0,0,-1]  (sign may vary)
-    // Sagittal: row≈[0,1,0], col≈[0,0,-1]
-    if (nearly(Math.abs(r1), 1) && nearly(Math.abs(c2), 1) && nearly(Math.abs(r2), 0) && nearly(Math.abs(c1), 0) && nearly(Math.abs(r3), 0) && nearly(Math.abs(c3), 0)) {
-      (info as any).plane = 'Axial';
-    } else if (nearly(Math.abs(r1), 1) && nearly(Math.abs(c3), 1)) {
-      (info as any).plane = 'Coronal';
-    } else if (nearly(Math.abs(r2), 1) && nearly(Math.abs(c3), 1)) {
-      (info as any).plane = 'Sagittal';
-    } else {
-      (info as any).plane = 'Unknown';
-    }
-  });
-
-  // Filter to axial (change if you want coronal/sagittal)
-  const axial = imagesInfo.filter(i => (i as any).plane === 'Axial' && i.position);
-
-  if (axial.length === 0) {
-    console.error('No axial slices found. Dumping first item for debugging:', imagesInfo[0]);
-    console.error('Check that metaData key "imagePlaneModule" is available and files belong to the same series.');
-    alert('No axial slices found. See console for details.');
-    return;
+async function tryURIthenRS(
+  element: HTMLDivElement,
+  studyUID: string,
+  seriesUID: string,
+  sopUID: string
+): Promise<boolean> {
+  // A) WADO-URI (requiere proxy /wado en webpack-dev-server)
+  const wadoUri = `wadouri:/wado?requestType=WADO&studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID)}&objectUID=${encodeURIComponent(sopUID)}&contentType=application/dicom`;
+  try {
+    console.log("Mostrando (WADO-URI):", wadoUri);
+    const img = await cornerstone.loadAndCacheImage(wadoUri);
+    cornerstone.displayImage(element, img);
+    console.log(`✔️ Renderizada por WADO-URI: ${sopUID} (${img.width}x${img.height})`);
+    return true;
+  } catch (err) {
+    console.warn("Falló WADO-URI:", err);
   }
 
-  // Sort by slice position (z). If orientation is not perfectly axial, compute using normal vector:
-  axial.sort((a, b) => (a.position![2] - b.position![2]));
+  // B) WADO-RS (frames/1)
+  const wadoRs = `wadors:/dicom-web/studies/${encodeURIComponent(studyUID)}/series/${encodeURIComponent(seriesUID)}/instances/${encodeURIComponent(sopUID)}/frames/1`;
+  try {
+    console.log("Mostrando (WADO-RS frames/1):", wadoRs);
+    const img = await cornerstone.loadAndCacheImage(wadoRs);
+    cornerstone.displayImage(element, img);
+    console.log(`✔️ Renderizada por WADO-RS: ${sopUID} (${img.width}x${img.height})`);
+    return true;
+  } catch (err) {
+    console.error(`❌ No pudo renderizar SOP ${sopUID} por WADO-URI ni WADO-RS`, err);
+    return false;
+  }
+}
 
-  const sortedIds = axial.map(i => i.id);
-
-  const stack = { currentImageIdIndex: 0, imageIds: sortedIds };
-
-  cornerstone.loadImage(stack.imageIds[0]).then((image: any) => {
-    cornerstone.displayImage(element, image);
-    (element as any).stack = stack;
-
-    element.addEventListener('wheel', (event: WheelEvent) => {
-      event.preventDefault();
-      const dir = event.deltaY > 0 ? 1 : -1;
-      stack.currentImageIdIndex = Math.min(
-        Math.max(stack.currentImageIdIndex + dir, 0),
-        stack.imageIds.length - 1
-      );
-      cornerstone.loadImage(stack.imageIds[stack.currentImageIdIndex]).then((newImage: any) => {
-        cornerstone.displayImage(element, newImage);
-      });
-    });
-  });
-}).catch(err => {
-  console.error('Error while loading images / metadata:', err);
-});
+init();
