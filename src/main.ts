@@ -1,24 +1,29 @@
-import * as cornerstone from 'cornerstone-core';
-import * as cornerstoneWADOImageLoader from 'cornerstone-wado-image-loader';
-import * as dicomParser from 'dicom-parser';
+import {
+  init as cs3dInit,
+  RenderingEngine,
+  Enums,
+  volumeLoader,
+  setVolumesForViewports,
+  metaData,
+} from '@cornerstonejs/core';
 
-// === Enlaces básicos (suficientes para integrar el loader) ===
-cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
-cornerstoneWADOImageLoader.external.dicomParser = dicomParser;
+import {
+  init as dicomImageLoaderInit,
+  wadors,
+} from '@cornerstonejs/dicom-image-loader';
 
-// === (Opcional recomendado) Workers + codecs si tus CT están comprimidas ===
-// cornerstoneWADOImageLoader.webWorkerManager.initialize({
-//   maxWebWorkers: Math.min(2, (navigator.hardwareConcurrency || 2)),
-//   startWebWorkersOnDemand: true,
-//   webWorkerPath: '/dist/index.worker.min.worker.js', // copiado a public/dist
-//   taskConfiguration: {
-//     decodeTask: { initializeCodecsOnStartup: true, codecsPath: '/dist', usePDFJS: false },
-//   },
-// });
+import {
+  init as toolsInit,
+  ToolGroupManager,
+  Enums as csToolsEnums,
+  addTool,
+  StackScrollTool,      // 👈 usamos este
+  WindowLevelTool,
+  PanTool,
+  ZoomTool,
+} from '@cornerstonejs/tools';
 
-console.log("Iniciando aplicación...");
-
-// ---------- Utilidades de ordenación ----------
+// === Utilidades ===
 function toNumber(v: any): number | undefined {
   if (v === undefined || v === null) return undefined;
   const n = Number(v);
@@ -30,25 +35,12 @@ function toNumberArray(tagObj: any): number[] | undefined {
   const nums = arr.map(Number);
   return nums.every(Number.isFinite) ? nums : undefined;
 }
-function cross(a: number[], b: number[]) {
-  return [
-    a[1]*b[2] - a[2]*b[1],
-    a[2]*b[0] - a[0]*b[2],
-    a[0]*b[1] - a[1]*b[0],
-  ];
-}
-function dot(a: number[], b: number[]) {
-  return a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
-}
 
 type Entry = {
   sopUID: string;
   hasPixel: boolean;
   instNumber?: number;
-  ipp?: number[];          // [x,y,z]
-  iopRow?: number[];       // [xr,yr,zr]
-  iopCol?: number[];       // [xc,yc,zc]
-  posAlongNormal?: number; // proyección de IPP sobre la normal
+  ipp?: number[];
 };
 
 async function init() {
@@ -60,7 +52,7 @@ async function init() {
     const seriesRes  = await fetch(`${baseUrl}/studies/${encodeURIComponent(studyUID)}/series?includefield=00080060,0020000E`);
     const seriesList = await seriesRes.json();
     const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "CT");
-    if (!ctSeries) throw new Error("No se encontró una serie CT.");
+    if (!ctSeries) throw new Error("No se encontró serie CT.");
     const seriesUID  = ctSeries["0020000E"].Value[0];
 
     // 2) Instancias de la serie
@@ -68,8 +60,10 @@ async function init() {
     const instList = await instRes.json();
     if (!instList.length) throw new Error("La serie CT no contiene imágenes.");
 
-    // 3) Recolectar metadatos y preparar entradas
+    // 3) Preparar entradas y cachear metadatos por SOP
     const entries: Entry[] = [];
+    const metaBySop = new Map<string, any>();
+
     for (const inst of instList) {
       const sopUID = inst["00080018"]?.Value?.[0];
       if (!sopUID) continue;
@@ -80,139 +74,119 @@ async function init() {
       if (!Array.isArray(metadata) || metadata.length === 0) continue;
 
       const t = metadata[0];
+      metaBySop.set(sopUID, t); // guarda el JSON /metadata
 
-      // PixelData presente (BulkDataURI o InlineBinary)
       const pixelDataTag = t["7FE00010"];
       const hasPixel = !!pixelDataTag && (pixelDataTag.BulkDataURI || pixelDataTag.InlineBinary);
-
-      // Orden preferente: InstanceNumber
       const instNumber = toNumber(t["00200013"]?.Value?.[0]);
+      const ipp = toNumberArray(t["00200032"]);
 
-      // Orden geométrico: IOP + IPP
-      const ipp = toNumberArray(t["00200032"]);     // ImagePositionPatient [x,y,z]
-      const iop = toNumberArray(t["00200037"]);     // ImageOrientationPatient [xr,yr,zr, xc,yc,zc]
-      const iopRow = iop ? iop.slice(0,3) : undefined;
-      const iopCol = iop ? iop.slice(3,6) : undefined;
-
-      entries.push({ sopUID, hasPixel, instNumber, ipp, iopRow, iopCol });
+      entries.push({ sopUID, hasPixel, instNumber, ipp });
     }
 
-    // 4) Filtrar sólo con píxel
+    // 4) Filtrar sólo instancias con píxel
     let stack = entries.filter(e => e.hasPixel);
-    if (!stack.length) throw new Error("No hay instancias con PixelData (7FE0,0010) accesible por DICOMweb.");
+    if (!stack.length) throw new Error("No hay instancias con PixelData.");
 
-    // 5) Calcular proyección IPP sobre la normal cuando hay IOP
-    for (const e of stack) {
-      if (e.ipp && e.iopRow && e.iopCol) {
-        const normal = cross(e.iopRow, e.iopCol);
-        e.posAlongNormal = dot(e.ipp, normal);
-      }
-    }
-
-    // 6) Ordenar la pila (InstanceNumber → proyección → z → SOPUID)
+    // Orden por InstanceNumber si la mayoría lo tiene
     const countWithInst = stack.filter(e => e.instNumber !== undefined).length;
-    const countWithProj = stack.filter(e => e.posAlongNormal !== undefined).length;
-    const countWithZ    = stack.filter(e => e.ipp && Number.isFinite(e.ipp[2])).length;
-
     if (countWithInst > stack.length * 0.6) {
       stack.sort((a, b) => (a.instNumber! - b.instNumber!));
-      console.log("Ordenado por InstanceNumber");
-    } else if (countWithProj > stack.length * 0.6) {
-      stack.sort((a, b) => (a.posAlongNormal! - b.posAlongNormal!));
-      console.log("Ordenado por proyección (IOP·IPP)");
-    } else if (countWithZ > stack.length * 0.6) {
-      stack.sort((a, b) => ((a.ipp![2]) - (b.ipp![2])));
-      console.log("Ordenado por IPP.z (fallback)");
-    } else {
-      stack.sort((a, b) => a.sopUID.localeCompare(b.sopUID));
-      console.warn("Orden fallback por SOPInstanceUID (datos incompletos)");
     }
 
-    const validSOPs = stack.map(e => e.sopUID);
-    console.log(`🧩 Pila ordenada, total ${validSOPs.length} imágenes`);
+    // 5) Inicializar Cornerstone3D + loader y registrar WADO-RS
+    await cs3dInit();
+    await dicomImageLoaderInit();
 
-    // 7) Render y navegación
-    const element = document.getElementById("dicomImage") as HTMLDivElement;
-    cornerstone.enable(element);
+    wadors.register();
+    metaData.addProvider(wadors.metaData.metaDataProvider, 10000);
 
-    let currentIndex = 0;
-    let wheelAttached = false;
-    let lastWheelTs = 0;
-
-    // Overlay índice/total
-    const overlay = document.createElement('div');
-    overlay.style.position = 'absolute';
-    overlay.style.right = '8px';
-    overlay.style.bottom = '8px';
-    overlay.style.padding = '4px 8px';
-    overlay.style.background = 'rgba(0,0,0,0.6)';
-    overlay.style.color = '#fff';
-    overlay.style.font = '12px/1.2 system-ui, sans-serif';
-    overlay.style.borderRadius = '6px';
-    overlay.style.pointerEvents = 'none';
-    element.style.position = 'relative';
-    element.appendChild(overlay);
-
-    await loadImage(validSOPs[currentIndex]);
-
-    if (!wheelAttached) {
-      wheelAttached = true;
-
-      element.addEventListener("wheel", async (e) => {
-        e.preventDefault();
-        const now = Date.now();
-        if (now - lastWheelTs < 40) return; // throttle (~25fps)
-        lastWheelTs = now;
-
-        currentIndex += e.deltaY > 0 ? 1 : -1;
-        currentIndex = Math.max(0, Math.min(currentIndex, validSOPs.length - 1));
-        await loadImage(validSOPs[currentIndex]);
-      }, { passive: false });
-
-      // Teclado: flechas para navegar
-      window.addEventListener('keydown', async (e) => {
-        if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-          currentIndex = Math.max(0, currentIndex - 1);
-          await loadImage(validSOPs[currentIndex]);
-        } else if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
-          currentIndex = Math.min(validSOPs.length - 1, currentIndex + 1);
-          await loadImage(validSOPs[currentIndex]);
-        } else if (e.key.toLowerCase() === 'r') {
-          // Invertir pila rápidamente
-          validSOPs.reverse();
-          currentIndex = validSOPs.length - 1 - currentIndex;
-          console.log("↕️ Stack invertido (atajo R)");
-          await loadImage(validSOPs[currentIndex]);
-        }
-      });
-    }
-
-    async function loadImage(sopUID: string) {
-      // Preferimos WADO-URI (requiere proxy /wado)
-      const wadoUri = `wadouri:/wado?requestType=WADO&studyUID=${encodeURIComponent(studyUID)}&seriesUID=${encodeURIComponent(seriesUID)}&objectUID=${encodeURIComponent(sopUID)}&contentType=application/dicom`;
-      try {
-        console.log("Mostrando (WADO-URI):", wadoUri);
-        const image = await cornerstone.loadAndCacheImage(wadoUri);
-        cornerstone.displayImage(element, image);
-        cornerstone.reset(element);
-        overlay.textContent = `${currentIndex + 1} / ${validSOPs.length}`;
-        console.log(`✔️ Renderizada por WADO-URI: ${sopUID} (${image.width}x${image.height})`);
-        return;
-      } catch (err) {
-        console.warn("Falló WADO-URI, probando WADO-RS:", err);
+    // 6) Construir imageIds (wadors) y precargar sus metadatos en el metaDataManager
+    const imageIds = stack.map(e => {
+      const imageId = `wadors:${baseUrl}/studies/${encodeURIComponent(studyUID)}/series/${encodeURIComponent(seriesUID)}/instances/${encodeURIComponent(e.sopUID)}/frames/1`;
+      const dicomJson = metaBySop.get(e.sopUID);
+      if (dicomJson) {
+        wadors.metaDataManager.add(imageId, dicomJson);
       }
+      return imageId;
+    });
 
-      // Fallback WADO-RS /frames/1
-      const wadoRs = `wadors:/dicom-web/studies/${encodeURIComponent(studyUID)}/series/${encodeURIComponent(seriesUID)}/instances/${encodeURIComponent(sopUID)}/frames/1`;
-      const image = await cornerstone.loadAndCacheImage(wadoRs);
-      cornerstone.displayImage(element, image);
-      cornerstone.reset(element);
-      overlay.textContent = `${currentIndex + 1} / ${validSOPs.length}`;
-      console.log(`✔️ Renderizada por WADO-RS: ${sopUID} (${image.width}x${image.height})`);
+    // 7) Inicializar herramientas y registrarlas
+    await toolsInit();
+    addTool(StackScrollTool);
+    addTool(WindowLevelTool);
+    addTool(PanTool);
+    addTool(ZoomTool);
+
+    // 8) Motor de render y viewports
+    const renderingEngineId = 'myRenderingEngine';
+    const renderingEngine = new RenderingEngine(renderingEngineId);
+
+    const axialEl = document.getElementById('axial') as HTMLDivElement;
+    const sagEl   = document.getElementById('sagittal') as HTMLDivElement;
+
+    const { ViewportType, OrientationAxis } = Enums;
+
+    renderingEngine.setViewports([
+      {
+        viewportId: 'CT_AXIAL',
+        element: axialEl,
+        type: ViewportType.ORTHOGRAPHIC,
+        defaultOptions: { orientation: OrientationAxis.AXIAL },
+      },
+      {
+        viewportId: 'CT_SAGITTAL',
+        element: sagEl,
+        type: ViewportType.ORTHOGRAPHIC,
+        defaultOptions: { orientation: OrientationAxis.SAGITTAL },
+      },
+    ]);
+
+    // 9) Crear y cargar volumen
+    const volumeId = 'cornerstoneStreamingImageVolume:ctVolumeId';
+    const volume = await volumeLoader.createAndCacheVolume(volumeId, { imageIds });
+    await volume.load();
+
+    // 10) Asignar volumen a ambos viewports
+    setVolumesForViewports(
+      renderingEngine,
+      [{ volumeId }],
+      ['CT_AXIAL', 'CT_SAGITTAL']
+    );
+
+    // 11) ToolGroup: crearlo de forma segura
+    const toolGroupId = 'CT_TOOLGROUP';
+    let toolGroup = ToolGroupManager.getToolGroup(toolGroupId);
+    if (!toolGroup) {
+      toolGroup = ToolGroupManager.createToolGroup(toolGroupId);
+    }
+    if (!toolGroup) {
+      throw new Error('No se pudo crear/obtener el ToolGroup');
     }
 
-  } catch (e) {
-    console.error("Fallo en init():", e);
+    // Añadir herramientas al grupo
+    toolGroup.addTool(StackScrollTool.toolName);
+    toolGroup.addTool(WindowLevelTool.toolName);
+    toolGroup.addTool(PanTool.toolName);
+    toolGroup.addTool(ZoomTool.toolName);
+
+    // Enlazar viewports
+    toolGroup.addViewport('CT_AXIAL', renderingEngineId);
+    toolGroup.addViewport('CT_SAGITTAL', renderingEngineId);
+
+    // Activar con bindings (izq WW/WL, medio Pan, der Zoom, rueda StackScroll)
+    const { MouseBindings } = csToolsEnums;
+    toolGroup.setToolActive(WindowLevelTool.toolName, { bindings: [{ mouseButton: MouseBindings.Primary }] });
+    toolGroup.setToolActive(PanTool.toolName,         { bindings: [{ mouseButton: MouseBindings.Auxiliary }] });
+    toolGroup.setToolActive(ZoomTool.toolName,        { bindings: [{ mouseButton: MouseBindings.Secondary }] });
+    toolGroup.setToolActive(StackScrollTool.toolName, { bindings: [{ mouseButton: MouseBindings.Wheel }] }); // 👈 rueda
+
+    // 12) Render
+    renderingEngine.renderViewports(['CT_AXIAL', 'CT_SAGITTAL']);
+
+    console.log(`Volumen cargado con ${imageIds.length} cortes y tools activas (rueda = scroll).`);
+  } catch (err) {
+    console.error("Fallo en init():", err);
   }
 }
 
