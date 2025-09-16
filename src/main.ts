@@ -61,7 +61,7 @@ async function init() {
     // 1) Series del estudio ⇒ elegir CT
     const seriesRes  = await fetch(`${baseUrl}/studies/${encodeURIComponent(studyUID)}/series?includefield=00080060,0020000E`);
     const seriesList = await seriesRes.json();
-  const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "CT");
+  const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "SC");
     if (!ctSeries) throw new Error("No se encontró serie CT.");
     const seriesUID  = ctSeries["0020000E"].Value[0];
 
@@ -215,6 +215,13 @@ async function init() {
         getTextLines: () => [],
         alwaysRenderTextBox: false,
         hideTextBox: true,
+  // Disable editing interactions
+  preventHandleOutsideImage: true,
+  allowOpenContourEditing: false,
+  allowClosedContourEditing: false,
+  canEdit: false,
+  isLocked: true,
+  lockOnCreation: true,
       } as any);
     } catch {}
 
@@ -223,8 +230,9 @@ async function init() {
     toolGroup.setToolActive(WindowLevelTool.toolName, { bindings: [{ mouseButton: MouseBindings.Primary }] });
     toolGroup.setToolActive(PanTool.toolName,         { bindings: [{ mouseButton: MouseBindings.Auxiliary }] });
     toolGroup.setToolActive(ZoomTool.toolName,        { bindings: [{ mouseButton: MouseBindings.Secondary }] });
-    toolGroup.setToolActive(StackScrollTool.toolName, { bindings: [{ mouseButton: MouseBindings.Wheel }] });
-    toolGroup.setToolPassive(PlanarFreehandROITool.toolName); // mostrar overlays sin interacción
+  toolGroup.setToolActive(StackScrollTool.toolName, { bindings: [{ mouseButton: MouseBindings.Wheel }] });
+  // Mostrar overlays sin interacción: habilitado (renderiza) pero no responde a eventos de edición
+  toolGroup.setToolEnabled(PlanarFreehandROITool.toolName);
 
     // 12) Render
     renderingEngine.renderViewports(['CT_AXIAL', 'CT_SAGITTAL', 'CT_CORONAL']);
@@ -543,6 +551,8 @@ async function overlayRTStructContours(opts: {
               viewPlaneNormal,
               viewUp,
               color: displayColor,
+              locked: true,
+              isLocked: true,
             },
             data: {
               contour: {
@@ -558,6 +568,7 @@ async function overlayRTStructContours(opts: {
               label: '',
               polylineClosed: true,
               closed: true,
+              locked: true,
             },
           } as any,
           // Group key for annotation manager; use FrameOfReferenceUID
