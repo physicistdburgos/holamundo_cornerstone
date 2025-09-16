@@ -61,7 +61,7 @@ async function init() {
     // 1) Series del estudio ⇒ elegir CT
     const seriesRes  = await fetch(`${baseUrl}/studies/${encodeURIComponent(studyUID)}/series?includefield=00080060,0020000E`);
     const seriesList = await seriesRes.json();
-    const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "SC");
+  const ctSeries   = seriesList.find((s: any) => s["00080060"]?.Value?.[0] === "CT");
     if (!ctSeries) throw new Error("No se encontró serie CT.");
     const seriesUID  = ctSeries["0020000E"].Value[0];
 
@@ -326,14 +326,21 @@ async function overlayRTStructContours(opts: {
       if (raw) {
         // Adaptar desde DICOM JSON (tags numéricos) a estructura consumible
         const getValue = (obj: any, tag: string) => obj?.[tag]?.Value?.[0];
-  const roiContourSeq = raw['30060039']?.Value || [];
+        const roiContourSeq = raw['30060039']?.Value || [];
+        const structureSetROISeq = raw['30060020']?.Value || [];
         ds = {
           FrameOfReferenceUID: getValue(raw, '00200052') || frameOfReferenceUIDHint,
+          StructureSetROISequence: structureSetROISeq.map((s: any) => ({
+            ROINumber: Number(s['30060022']?.Value?.[0]),
+            ROIName: (s['30060026']?.Value?.[0] ?? '').toString(),
+          })),
           ROIContourSequence: roiContourSeq.map((roiItem: any) => {
             const displayColor = getValue(roiItem, '3006002A');
+            const refRoiNum    = Number(roiItem['30060084']?.Value?.[0]);
             const contourSeq = roiItem['30060040']?.Value || [];
             return {
               ROIDisplayColor: Array.isArray(displayColor) ? displayColor.map(Number) : undefined,
+              ReferencedROINumber: Number.isFinite(refRoiNum) ? refRoiNum : undefined,
               ContourSequence: contourSeq.map((c: any) => {
                 const data = (c['30060050']?.Value || []) as number[];
     // Prefer ContourImageSequence (3006,0016); fallback to ReferencedImageSequence (0008,1140)
@@ -412,10 +419,38 @@ async function overlayRTStructContours(opts: {
     return;
   }
 
+  // ROI selection by name
+  const roiNameByNumber = new Map<number, string>();
+  (ds.StructureSetROISequence || []).forEach((it: any) => {
+    if (Number.isFinite(it?.ROINumber)) {
+      roiNameByNumber.set(Number(it.ROINumber), (it.ROIName ?? '').toString());
+    }
+  });
+  const url = new URL(window.location.href);
+  const includeSet = url.searchParams.get('roi')
+    ? new Set(url.searchParams.get('roi')!.split(',').map(s => s.trim().toLowerCase()).filter(Boolean))
+    : undefined;
+  const excludeSet = url.searchParams.get('excludeRoi')
+    ? new Set(url.searchParams.get('excludeRoi')!.split(',').map(s => s.trim().toLowerCase()).filter(Boolean))
+    : undefined;
+  const DISABLED_ROIS = new Set<string>([
+    'exceso', 'interseccion','defecto'
+    // Add lowercase ROI names to always hide here, e.g.: 'parotid l'
+  ]);
+
   const allImageIds: string[] = Array.from(sopToImageId.values());
 
   // 5) Recorremos ROIContourSequence y añadimos anotaciones por ContourSequence
   for (const roiContour of roiContourSeq) {
+    const roiNumber: number | undefined = Number.isFinite(roiContour.ReferencedROINumber)
+      ? Number(roiContour.ReferencedROINumber)
+      : undefined;
+    const roiName = roiNumber != null ? roiNameByNumber.get(roiNumber) : undefined;
+    const roiNameKey = roiName?.toLowerCase();
+
+    if (includeSet && (!roiNameKey || !includeSet.has(roiNameKey))) continue;
+    if (excludeSet && roiNameKey && excludeSet.has(roiNameKey)) continue;
+    if (roiNameKey && DISABLED_ROIS.has(roiNameKey)) continue;
     const displayColor: number[] | undefined = roiContour.ROIDisplayColor; // [R,G,B] 0..255
     const contours = roiContour.ContourSequence || [];
     for (const contour of contours) {
