@@ -902,4 +902,73 @@ rectBtn.addEventListener("click", () => {
   }
 });
 
+// =============================
+// 🌗 Window Width / Center (WW/WC sincronizado - mamografía calibrada 12-bit)
+// =============================
+
+// Rango clínico realista para mamografía (0–4095)
+const MAMMO_RANGE = {
+  minWidth: 100,
+  maxWidth: 4095,
+  minCenter: -500,
+  maxCenter: 4500,
+};
+
+// Valores iniciales típicos
+let ww = 1200; // contraste inicial
+let wc = 600;  // nivel inicial
+let wwHudTimeout: any = null;
+
+// Crear HUD (overlay)
+const hud = document.createElement("div");
+hud.style.position = "absolute";
+hud.style.top = "10px";
+hud.style.left = "15px";
+hud.style.padding = "6px 10px";
+hud.style.borderRadius = "6px";
+hud.style.background = "rgba(0, 0, 0, 0.6)";
+hud.style.color = "white";
+hud.style.fontSize = "13px";
+hud.style.fontFamily = "Arial";
+hud.style.pointerEvents = "none";
+hud.style.opacity = "0";
+hud.style.transition = "opacity 0.4s ease";
+hud.innerText = `WW: ${ww} | WC: ${wc}`;
+element.parentElement?.appendChild(hud);
+
+// Actualizar viewport
+function updateWWWC() {
+  const viewport = cornerstone.getViewport(element);
+  viewport.voi.windowWidth = ww;
+  viewport.voi.windowCenter = wc;
+  cornerstone.setViewport(element, viewport);
+  showHud();
+}
+
+// Mostrar HUD (se desvanece)
+function showHud() {
+  hud.innerText = `WW: ${Math.round(ww)} | WC: ${Math.round(wc)}`;
+  hud.style.opacity = "1";
+  clearTimeout(wwHudTimeout);
+  wwHudTimeout = setTimeout(() => (hud.style.opacity = "0"), 1500);
+}
+
+// Escuchar la rueda del mouse
+element.addEventListener("wheel", (e: WheelEvent) => {
+  e.preventDefault();
+
+  // Movimiento suave
+  const step = e.deltaY * -0.25;
+
+  // Aclarar (rueda arriba): aumentar WW, bajar WC
+  ww += step;
+  wc -= step * 0.5;
+
+  // Mantener dentro del rango
+  ww = Math.max(MAMMO_RANGE.minWidth, Math.min(MAMMO_RANGE.maxWidth, ww));
+  wc = Math.max(MAMMO_RANGE.minCenter, Math.min(MAMMO_RANGE.maxCenter, wc));
+
+  updateWWWC();
+});
+
 }
