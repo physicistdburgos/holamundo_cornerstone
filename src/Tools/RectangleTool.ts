@@ -4,8 +4,8 @@ import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
 
 export function setupRectangleTool(element: HTMLElement) {
-    
-// Herramienta Rectangle ROI 
+
+// RECTANGLE ROOL 
 
 const rectBtn = document.getElementById("rectBtn") as HTMLButtonElement;
 let rectActive = false;

@@ -6,7 +6,7 @@ import * as cornerstoneTools from "cornerstone-tools";
 export function setupFreeHandTool(element: HTMLElement) {
 
 
-// Herramienta Freehand ROI 
+// FREEHAND TOOL 
 
 const freehandBtn = document.getElementById("freehandBtn") as HTMLButtonElement;
 let freehandActive = false;

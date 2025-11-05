@@ -4,7 +4,7 @@ import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
 export function setupEllipseTool(element: HTMLElement) {
 
-// Herramienta Elipse ROI
+// ELLIPSE TOOL
 
 let ellipses: any[] = [];
 const EllipticalRoiTool = cornerstoneTools.EllipticalRoiTool;

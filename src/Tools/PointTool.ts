@@ -5,7 +5,7 @@ import * as cornerstoneTools from "cornerstone-tools";
 
 export function setupPointTool(element: HTMLElement) {
    
-    // Herramienta de Punto 
+    // POINT TOOL 
    
     const pointBtn = document.getElementById("pointBtn") as HTMLButtonElement;
     let pointActive = false;

@@ -5,7 +5,7 @@ import * as cornerstoneTools from "cornerstone-tools";
 export function setupRulerTool(element: HTMLElement) {
   // ...
 
-// Herramienta de Medir
+// RULER TOOL
   
   const LengthTool = cornerstoneTools.LengthTool;
   cornerstoneTools.addTool(LengthTool);

@@ -23,6 +23,8 @@ export function setupTools(element: HTMLElement) {
   setupPanTool(element);
   setupWindowLevelTool(element);
   setupInvertTool(element);
+  setupCrosshairTool(element);
+
 
   
   //Herramientas de anotación / etiquetado
@@ -183,3 +185,61 @@ function setupInvertTool(element: HTMLElement) {
     cornerstone.setViewport(element, viewport);
   });
 }
+
+
+
+//CROSSHAIR TOOL (Anclaje con clic sobre la imagen)
+
+function setupCrosshairTool(element: HTMLElement) {
+  const crosshairBtn = document.getElementById("crosshairBtn") as HTMLButtonElement;
+  let crosshairActive = false;
+  let fixedPoint: { x: number; y: number } | null = null;
+
+  // 🔘 Activar / desactivar la herramienta
+  crosshairBtn?.addEventListener("click", () => {
+    crosshairActive = !crosshairActive;
+    crosshairBtn.classList.toggle("active");
+    element.style.cursor = crosshairActive ? "crosshair" : "default";
+
+    // 🧹 Al desactivar, limpiar la cruz
+    if (!crosshairActive) {
+      fixedPoint = null;
+      cornerstone.updateImage(element);
+    }
+  });
+
+  //Fijar punto con clic único
+  element.addEventListener("click", (e: MouseEvent) => {
+    if (!crosshairActive) return;
+    const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+    fixedPoint = { x: coords.x, y: coords.y };
+    cornerstone.updateImage(element);
+  });
+
+  //Dibujar cruz fija sobre el punto seleccionado
+  element.addEventListener("cornerstoneimagerendered", (evt: any) => {
+    if (!crosshairActive || !fixedPoint) return;
+
+    const context = evt.detail.canvasContext.canvas.getContext("2d");
+    const { x, y } = cornerstone.pixelToCanvas(element, fixedPoint);
+    const canvas = evt.detail.canvasContext.canvas;
+
+    context.save();
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.strokeStyle = "rgba(0, 255, 0, 0.9)"; // verde clínico
+    context.lineWidth = 1.5;
+
+    // ➕ Líneas cruzadas
+    context.beginPath();
+    context.moveTo(x, 0);
+    context.lineTo(x, canvas.height);
+    context.moveTo(0, y);
+    context.lineTo(canvas.width, y);
+    context.stroke();
+
+    context.restore();
+  });
+}
+
+
+
