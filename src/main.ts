@@ -6,7 +6,7 @@ import * as dicomParser from "dicom-parser";
 import * as cornerstoneTools from "cornerstone-tools";
 import * as cornerstoneMath from "cornerstone-math";
 import Hammer from "hammerjs";
-import { setupTools } from "./Tools/setupTools"; // 👈 importas tu función
+import { setupTools } from "./setupTools"; 
 
 // Configurar dependencias externas
 cornerstoneWADOImageLoader.external.cornerstone = cornerstone;
