@@ -283,8 +283,9 @@ pointBtn.addEventListener("click", () => {
 });
 
 // =============================
-// ✏️ Herramienta Freehand ROI (solo contorno + texto clínico organizado)
+// 🧠 Herramienta Freehand ROI (versión clínica final)
 // =============================
+
 const freehandBtn = document.getElementById("freehandBtn") as HTMLButtonElement;
 let freehandActive = false;
 let drawing = false;
@@ -294,10 +295,18 @@ let freehandROIs: {
   id: number;
   points: { x: number; y: number }[];
   stats?: { area: number; mean: number; std: number };
+  color: string;
 }[] = [];
 
-// --- Calcular estadísticas ---
+// Paleta de colores clínicos suaves
+const roiColors = ["#00FF00", "#00BFFF", "#FFD700", "#FF69B4", "#FF4500", "#ADFF2F"];
+let colorIndex = 0;
+
+// =============================
+// 📏 Función para calcular estadísticas
+// =============================
 function calculateStats(points: { x: number; y: number }[]) {
+  // --- Área geométrica (Shoelace) ---
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
@@ -305,6 +314,7 @@ function calculateStats(points: { x: number; y: number }[]) {
   }
   area = Math.abs(area / 2);
 
+  // --- Obtener pixel spacing ---
   let sx = 1, sy = 1;
   try {
     const imagePlane = cornerstone.metaData.get("imagePlaneModule", element);
@@ -314,18 +324,18 @@ function calculateStats(points: { x: number; y: number }[]) {
   } catch {
     sx = sy = 1;
   }
-
   area = area * sx * sy;
 
+  // --- Estadísticas de intensidad ---
   const image = cornerstone.getImage(element);
   const pixelData = image.getPixelData();
   const width = image.width;
   const height = image.height;
 
-  const minX = Math.max(0, Math.floor(Math.min(...points.map((p) => p.x))));
-  const maxX = Math.min(width - 1, Math.ceil(Math.max(...points.map((p) => p.x))));
-  const minY = Math.max(0, Math.floor(Math.min(...points.map((p) => p.y))));
-  const maxY = Math.min(height - 1, Math.ceil(Math.max(...points.map((p) => p.y))));
+  const minX = Math.max(0, Math.floor(Math.min(...points.map(p => p.x))));
+  const maxX = Math.min(width - 1, Math.ceil(Math.max(...points.map(p => p.x))));
+  const minY = Math.max(0, Math.floor(Math.min(...points.map(p => p.y))));
+  const maxY = Math.min(height - 1, Math.ceil(Math.max(...points.map(p => p.y))));
 
   let values: number[] = [];
 
@@ -335,13 +345,10 @@ function calculateStats(points: { x: number; y: number }[]) {
       for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
         if (
           points[i].y > y !== points[j].y > y &&
-          x <
-            ((points[j].x - points[i].x) * (y - points[i].y)) /
-              (points[j].y - points[i].y) +
-              points[i].x
-        ) {
-          inside = !inside;
-        }
+          x < ((points[j].x - points[i].x) * (y - points[i].y)) /
+                (points[j].y - points[i].y) +
+                points[i].x
+        ) inside = !inside;
       }
       if (inside) values.push(pixelData[y * width + x]);
     }
@@ -351,61 +358,74 @@ function calculateStats(points: { x: number; y: number }[]) {
   if (values.length > 0) {
     mean = values.reduce((a, b) => a + b, 0) / values.length;
     std = Math.sqrt(
-      values.map((v) => (v - mean) ** 2).reduce((a, b) => a + b, 0) / values.length
+      values.map(v => (v - mean) ** 2).reduce((a, b) => a + b, 0) / values.length
     );
   }
 
   return { area, mean, std };
 }
 
-// --- Dibujar ROIs ---
+// =============================
+// 🎨 Dibujar los ROIs
+// =============================
 function drawFreehand(evt: any) {
   const eventData = evt.detail;
   const ctx = eventData.canvasContext.canvas.getContext("2d");
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.lineWidth = 2;
-  ctx.strokeStyle = "lime";
   ctx.font = "13px Arial";
-  ctx.fillStyle = "white";
 
-  // Dibujar ROIs finalizados (solo contorno)
-  freehandROIs.forEach((roi) => {
-    const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
+  freehandROIs.forEach(roi => {
+    const pts = roi.points.map(p => cornerstone.pixelToCanvas(element, p));
     ctx.beginPath();
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
     ctx.closePath();
+    ctx.strokeStyle = roi.color;
     ctx.stroke();
 
-    // Mostrar medidas arriba a la izquierda del ROI
     if (roi.stats) {
-      const minX = Math.min(...pts.map((p) => p.x));
-      const minY = Math.min(...pts.map((p) => p.y));
+      // Punto más alto del ROI (para colocar texto)
+      const minX = Math.min(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
 
+      const textX = minX - 10;
+      const textY = minY - 25;
+
+      // Línea guía
+      ctx.strokeStyle = roi.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(minX + 5, minY);
+      ctx.lineTo(textX + 50, textY + 10);
+      ctx.stroke();
+
+      // Texto
+      ctx.fillStyle = roi.color;
       const lines = [
         `Area: ${roi.stats.area.toFixed(1)} mm²`,
         `Mean: ${roi.stats.mean.toFixed(1)}`,
         `Std Dev: ${roi.stats.std.toFixed(1)}`
       ];
-
-      lines.forEach((text, i) => {
-        ctx.fillText(text, minX + 10, minY - 25 + i * 15);
-      });
+      lines.forEach((t, i) => ctx.fillText(t, textX, textY + i * 15));
     }
   });
 
-  // Contorno actual (en curso)
+  // Mientras se dibuja
   if (drawing && currentPath.length > 1) {
-    const pts = currentPath.map((p) => cornerstone.pixelToCanvas(element, p));
+    const pts = currentPath.map(p => cornerstone.pixelToCanvas(element, p));
     ctx.beginPath();
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
+    ctx.strokeStyle = "#FFFFFF";
     ctx.stroke();
   }
 
   ctx.restore();
 }
 
-// --- Eventos de dibujo ---
+// =============================
+// ✍️ Eventos de dibujo
+// =============================
 function startDraw(e: MouseEvent) {
   drawing = true;
   currentPath = [];
@@ -424,7 +444,14 @@ function continueDraw(e: MouseEvent) {
 function endDraw() {
   if (drawing && currentPath.length > 2) {
     const stats = calculateStats(currentPath);
-    freehandROIs.push({ id: Date.now(), points: [...currentPath], stats });
+    const color = roiColors[colorIndex % roiColors.length];
+    colorIndex++;
+    freehandROIs.push({
+      id: Date.now(),
+      points: [...currentPath],
+      stats,
+      color
+    });
   }
   drawing = false;
   currentPath = [];
@@ -432,16 +459,17 @@ function endDraw() {
   cornerstone.updateImage(element);
 }
 
-// --- Doble clic para eliminar ROI ---
+// =============================
+// 🗑️ Doble clic para eliminar ROI
+// =============================
 function deleteNearestROI(e: MouseEvent) {
   if (freehandROIs.length === 0) return;
-
   const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
   const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
-  const distances = freehandROIs.map((roi) => {
-    const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
-    const dists = pts.map((p) => Math.hypot(p.x - clickCanvas.x, p.y - clickCanvas.y));
+  const distances = freehandROIs.map(roi => {
+    const pts = roi.points.map(p => cornerstone.pixelToCanvas(element, p));
+    const dists = pts.map(p => Math.hypot(p.x - clickCanvas.x, p.y - clickCanvas.y));
     return Math.min(...dists);
   });
 
@@ -454,7 +482,9 @@ function deleteNearestROI(e: MouseEvent) {
   }
 }
 
-// --- Activar / desactivar herramienta ---
+// =============================
+// ⚙️ Activar / desactivar herramienta
+// =============================
 freehandBtn.addEventListener("click", () => {
   if (!freehandActive) {
     element.addEventListener("cornerstoneimagerendered", drawFreehand);
