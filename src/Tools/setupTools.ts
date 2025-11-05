@@ -903,7 +903,7 @@ rectBtn.addEventListener("click", () => {
 });
 
 // =============================
-// 🌗 Window Width / Center (WW/WC sincronizado - mamografía calibrada 12-bit)
+// Window Width / Center (WW/WC)
 // =============================
 
 // Rango clínico realista para mamografía (0–4095)
