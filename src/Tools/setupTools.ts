@@ -283,54 +283,40 @@ pointBtn.addEventListener("click", () => {
 });
 
 // =============================
-// Herramienta Freehand ROI 
+// ✏️ Herramienta Freehand ROI (solo contorno + texto clínico organizado)
 // =============================
 const freehandBtn = document.getElementById("freehandBtn") as HTMLButtonElement;
 let freehandActive = false;
 let drawing = false;
 
-// Cada ROI libre se almacena como un conjunto de puntos
 let currentPath: { x: number; y: number }[] = [];
 let freehandROIs: {
   id: number;
   points: { x: number; y: number }[];
-  stats?: { area: number; perimeter: number; mean: number; std: number };
+  stats?: { area: number; mean: number; std: number };
 }[] = [];
 
-/**
- * Calcular estadísticas del ROI (geométricas + intensidad)
- */
+// --- Calcular estadísticas ---
 function calculateStats(points: { x: number; y: number }[]) {
-  // --- Geometría básica ---
   let area = 0;
-  let perimeter = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
     area += points[i].x * points[j].y - points[j].x * points[i].y;
-    perimeter += Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y);
   }
   area = Math.abs(area / 2);
 
-  // --- Obtener PixelSpacing de forma segura ---
-  let sx = 1,
-    sy = 1;
+  let sx = 1, sy = 1;
   try {
     const imagePlane = cornerstone.metaData.get("imagePlaneModule", element);
     if (imagePlane && Array.isArray(imagePlane.pixelSpacing)) {
       [sx, sy] = imagePlane.pixelSpacing.map(Number);
-    } else if (typeof imagePlane?.pixelSpacing === "number") {
-      sx = sy = Number(imagePlane.pixelSpacing);
     }
   } catch {
-    // fallback seguro
     sx = sy = 1;
   }
 
-  // --- Convertir unidades a mm² / mm ---
   area = area * sx * sy;
-  perimeter = perimeter * ((sx + sy) / 2);
 
-  // --- Intensidades ---
   const image = cornerstone.getImage(element);
   const pixelData = image.getPixelData();
   const width = image.width;
@@ -343,7 +329,6 @@ function calculateStats(points: { x: number; y: number }[]) {
 
   let values: number[] = [];
 
-  // rasterización simple (ray casting)
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       let inside = false;
@@ -362,8 +347,7 @@ function calculateStats(points: { x: number; y: number }[]) {
     }
   }
 
-  let mean = 0,
-    std = 0;
+  let mean = 0, std = 0;
   if (values.length > 0) {
     mean = values.reduce((a, b) => a + b, 0) / values.length;
     std = Math.sqrt(
@@ -371,12 +355,10 @@ function calculateStats(points: { x: number; y: number }[]) {
     );
   }
 
-  return { area, perimeter, mean, std };
+  return { area, mean, std };
 }
 
-/**
- * Dibuja todos los ROIs y estadísticas
- */
+// --- Dibujar ROIs ---
 function drawFreehand(evt: any) {
   const eventData = evt.detail;
   const ctx = eventData.canvasContext.canvas.getContext("2d");
@@ -384,36 +366,31 @@ function drawFreehand(evt: any) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.lineWidth = 2;
   ctx.strokeStyle = "lime";
-  ctx.fillStyle = "rgba(0, 255, 0, 0.15)";
-  ctx.font = "12px Arial";
-  ctx.fillStyle = "yellow";
+  ctx.font = "13px Arial";
+  ctx.fillStyle = "white";
 
-  // Dibujar ROIs finalizados
+  // Dibujar ROIs finalizados (solo contorno)
   freehandROIs.forEach((roi) => {
     const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
     ctx.beginPath();
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
     ctx.closePath();
     ctx.stroke();
-    ctx.fill();
 
-    // Mostrar estadísticas
-    const centroid = pts.reduce(
-      (acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }),
-      { x: 0, y: 0 }
-    );
-    centroid.x /= pts.length;
-    centroid.y /= pts.length;
-
+    // Mostrar medidas arriba a la izquierda del ROI
     if (roi.stats) {
-      ctx.fillStyle = "yellow";
-      ctx.fillText(
-        `A=${roi.stats.area.toFixed(1)}mm² | P=${roi.stats.perimeter.toFixed(
-          1
-        )}mm | µ=${roi.stats.mean.toFixed(1)} | σ=${roi.stats.std.toFixed(1)}`,
-        centroid.x - 60,
-        centroid.y
-      );
+      const minX = Math.min(...pts.map((p) => p.x));
+      const minY = Math.min(...pts.map((p) => p.y));
+
+      const lines = [
+        `Area: ${roi.stats.area.toFixed(1)} mm²`,
+        `Mean: ${roi.stats.mean.toFixed(1)}`,
+        `Std Dev: ${roi.stats.std.toFixed(1)}`
+      ];
+
+      lines.forEach((text, i) => {
+        ctx.fillText(text, minX + 10, minY - 25 + i * 15);
+      });
     }
   });
 
@@ -428,9 +405,7 @@ function drawFreehand(evt: any) {
   ctx.restore();
 }
 
-/**
- * Inicio del trazo libre
- */
+// --- Eventos de dibujo ---
 function startDraw(e: MouseEvent) {
   drawing = true;
   currentPath = [];
@@ -439,9 +414,6 @@ function startDraw(e: MouseEvent) {
   element.addEventListener("mousemove", continueDraw);
 }
 
-/**
- * Mientras se dibuja
- */
 function continueDraw(e: MouseEvent) {
   if (!drawing) return;
   const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
@@ -449,9 +421,6 @@ function continueDraw(e: MouseEvent) {
   cornerstone.updateImage(element);
 }
 
-/**
- * Final del trazo
- */
 function endDraw() {
   if (drawing && currentPath.length > 2) {
     const stats = calculateStats(currentPath);
@@ -463,16 +432,13 @@ function endDraw() {
   cornerstone.updateImage(element);
 }
 
-/**
- * Doble clic → elimina el ROI más cercano
- */
+// --- Doble clic para eliminar ROI ---
 function deleteNearestROI(e: MouseEvent) {
   if (freehandROIs.length === 0) return;
 
   const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
   const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
-  // Distancia mínima desde clic hasta cualquier punto del contorno
   const distances = freehandROIs.map((roi) => {
     const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
     const dists = pts.map((p) => Math.hypot(p.x - clickCanvas.x, p.y - clickCanvas.y));
@@ -482,15 +448,13 @@ function deleteNearestROI(e: MouseEvent) {
   const minDist = Math.min(...distances);
   const indexToRemove = distances.indexOf(minDist);
 
-  if (minDist < 25) {
+  if (minDist < 15) {
     freehandROIs.splice(indexToRemove, 1);
     cornerstone.updateImage(element);
   }
 }
 
-/**
- * Activar / desactivar herramienta
- */
+// --- Activar / desactivar herramienta ---
 freehandBtn.addEventListener("click", () => {
   if (!freehandActive) {
     element.addEventListener("cornerstoneimagerendered", drawFreehand);
