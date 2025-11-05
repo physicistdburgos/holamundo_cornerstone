@@ -283,30 +283,32 @@ pointBtn.addEventListener("click", () => {
 });
 
 // =============================
-// 🧠 Herramienta Freehand ROI (versión clínica final)
+// 🧠 Herramienta Freehand ROI (clínica, estilo elipse)
 // =============================
 
 const freehandBtn = document.getElementById("freehandBtn") as HTMLButtonElement;
 let freehandActive = false;
 let drawing = false;
+let movingLabel = false;
+let selectedROI: any = null;
+let offsetX = 0;
+let offsetY = 0;
 
 let currentPath: { x: number; y: number }[] = [];
 let freehandROIs: {
   id: number;
   points: { x: number; y: number }[];
   stats?: { area: number; mean: number; std: number };
-  color: string;
+  labelPos: { x: number; y: number };
 }[] = [];
 
-// Paleta de colores clínicos suaves
-const roiColors = ["#00FF00", "#00BFFF", "#FFD700", "#FF69B4", "#FF4500", "#ADFF2F"];
-let colorIndex = 0;
+// 🎨 Color único para todas las ROIs
+const roiColor = "#00FF00";
 
 // =============================
-// 📏 Función para calcular estadísticas
+// 📏 Calcular estadísticas del ROI
 // =============================
 function calculateStats(points: { x: number; y: number }[]) {
-  // --- Área geométrica (Shoelace) ---
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
@@ -314,8 +316,8 @@ function calculateStats(points: { x: number; y: number }[]) {
   }
   area = Math.abs(area / 2);
 
-  // --- Obtener pixel spacing ---
-  let sx = 1, sy = 1;
+  let sx = 1,
+    sy = 1;
   try {
     const imagePlane = cornerstone.metaData.get("imagePlaneModule", element);
     if (imagePlane && Array.isArray(imagePlane.pixelSpacing)) {
@@ -324,18 +326,18 @@ function calculateStats(points: { x: number; y: number }[]) {
   } catch {
     sx = sy = 1;
   }
+
   area = area * sx * sy;
 
-  // --- Estadísticas de intensidad ---
   const image = cornerstone.getImage(element);
   const pixelData = image.getPixelData();
   const width = image.width;
   const height = image.height;
 
-  const minX = Math.max(0, Math.floor(Math.min(...points.map(p => p.x))));
-  const maxX = Math.min(width - 1, Math.ceil(Math.max(...points.map(p => p.x))));
-  const minY = Math.max(0, Math.floor(Math.min(...points.map(p => p.y))));
-  const maxY = Math.min(height - 1, Math.ceil(Math.max(...points.map(p => p.y))));
+  const minX = Math.max(0, Math.floor(Math.min(...points.map((p) => p.x))));
+  const maxX = Math.min(width - 1, Math.ceil(Math.max(...points.map((p) => p.x))));
+  const minY = Math.max(0, Math.floor(Math.min(...points.map((p) => p.y))));
+  const maxY = Math.min(height - 1, Math.ceil(Math.max(...points.map((p) => p.y))));
 
   let values: number[] = [];
 
@@ -345,20 +347,24 @@ function calculateStats(points: { x: number; y: number }[]) {
       for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
         if (
           points[i].y > y !== points[j].y > y &&
-          x < ((points[j].x - points[i].x) * (y - points[i].y)) /
-                (points[j].y - points[i].y) +
-                points[i].x
-        ) inside = !inside;
+          x <
+            ((points[j].x - points[i].x) * (y - points[i].y)) /
+              (points[j].y - points[i].y) +
+              points[i].x
+        ) {
+          inside = !inside;
+        }
       }
       if (inside) values.push(pixelData[y * width + x]);
     }
   }
 
-  let mean = 0, std = 0;
+  let mean = 0,
+    std = 0;
   if (values.length > 0) {
     mean = values.reduce((a, b) => a + b, 0) / values.length;
     std = Math.sqrt(
-      values.map(v => (v - mean) ** 2).reduce((a, b) => a + b, 0) / values.length
+      values.map((v) => (v - mean) ** 2).reduce((a, b) => a + b, 0) / values.length
     );
   }
 
@@ -366,7 +372,7 @@ function calculateStats(points: { x: number; y: number }[]) {
 }
 
 // =============================
-// 🎨 Dibujar los ROIs
+// 🎨 Dibujar los ROIs + etiquetas
 // =============================
 function drawFreehand(evt: any) {
   const eventData = evt.detail;
@@ -375,48 +381,50 @@ function drawFreehand(evt: any) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.lineWidth = 2;
   ctx.font = "13px Arial";
+  ctx.strokeStyle = roiColor;
+  ctx.fillStyle = roiColor;
 
-  freehandROIs.forEach(roi => {
-    const pts = roi.points.map(p => cornerstone.pixelToCanvas(element, p));
+  freehandROIs.forEach((roi) => {
+    const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
     ctx.beginPath();
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
     ctx.closePath();
-    ctx.strokeStyle = roi.color;
     ctx.stroke();
 
     if (roi.stats) {
-      // Punto más alto del ROI (para colocar texto)
-      const minX = Math.min(...pts.map(p => p.x));
-      const minY = Math.min(...pts.map(p => p.y));
-
-      const textX = minX - 10;
-      const textY = minY - 25;
-
-      // Línea guía
-      ctx.strokeStyle = roi.color;
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(minX + 5, minY);
-      ctx.lineTo(textX + 50, textY + 10);
-      ctx.stroke();
-
-      // Texto
-      ctx.fillStyle = roi.color;
-      const lines = [
+      const textLines = [
         `Area: ${roi.stats.area.toFixed(1)} mm²`,
         `Mean: ${roi.stats.mean.toFixed(1)}`,
         `Std Dev: ${roi.stats.std.toFixed(1)}`
       ];
-      lines.forEach((t, i) => ctx.fillText(t, textX, textY + i * 15));
+
+      const labelCanvas = roi.labelPos;
+
+      // Línea guía punteada (como en elipse)
+      const maxX = Math.max(...pts.map((p) => p.x));
+      const centroidY =
+        pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.moveTo(maxX, centroidY);
+      ctx.lineTo(labelCanvas.x - 5, labelCanvas.y - 10);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Texto (alineado a la derecha del ROI)
+      textLines.forEach((t, i) => {
+        ctx.fillText(t, labelCanvas.x, labelCanvas.y + i * 15);
+      });
     }
   });
 
-  // Mientras se dibuja
+  // Contorno actual durante el dibujo
   if (drawing && currentPath.length > 1) {
-    const pts = currentPath.map(p => cornerstone.pixelToCanvas(element, p));
+    const pts = currentPath.map((p) => cornerstone.pixelToCanvas(element, p));
     ctx.beginPath();
     pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y)));
-    ctx.strokeStyle = "#FFFFFF";
+    ctx.strokeStyle = roiColor;
     ctx.stroke();
   }
 
@@ -444,19 +452,66 @@ function continueDraw(e: MouseEvent) {
 function endDraw() {
   if (drawing && currentPath.length > 2) {
     const stats = calculateStats(currentPath);
-    const color = roiColors[colorIndex % roiColors.length];
-    colorIndex++;
+    const ptsCanvas = currentPath.map((p) => cornerstone.pixelToCanvas(element, p));
+    const maxX = Math.max(...ptsCanvas.map((p) => p.x));
+    const centroidY = ptsCanvas.reduce((sum, p) => sum + p.y, 0) / ptsCanvas.length;
+
+    // Texto siempre a la derecha del ROI
+    const labelPos = { x: maxX + 20, y: centroidY - 15 };
+
     freehandROIs.push({
       id: Date.now(),
       points: [...currentPath],
       stats,
-      color
+      labelPos,
     });
   }
   drawing = false;
   currentPath = [];
   element.removeEventListener("mousemove", continueDraw);
   cornerstone.updateImage(element);
+}
+
+// =============================
+// 🧲 Mover texto directamente con clic
+// =============================
+function startMoveLabel(e: MouseEvent) {
+  const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+  const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+
+  selectedROI = null;
+  freehandROIs.forEach((roi) => {
+    const label = roi.labelPos;
+    const dx = Math.abs(label.x - clickCanvas.x);
+    const dy = Math.abs(label.y - clickCanvas.y);
+    if (dx < 80 && dy < 30) {
+      selectedROI = roi;
+      offsetX = clickCanvas.x - label.x;
+      offsetY = clickCanvas.y - label.y;
+    }
+  });
+
+  if (selectedROI) {
+    movingLabel = true;
+    element.addEventListener("mousemove", moveLabel);
+  }
+}
+
+function moveLabel(e: MouseEvent) {
+  if (!movingLabel || !selectedROI) return;
+  const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+  const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+  selectedROI.labelPos.x = clickCanvas.x - offsetX;
+  selectedROI.labelPos.y = clickCanvas.y - offsetY;
+  cornerstone.updateImage(element);
+}
+
+function endMoveLabel() {
+  if (movingLabel) {
+    movingLabel = false;
+    selectedROI = null;
+    element.removeEventListener("mousemove", moveLabel);
+  }
 }
 
 // =============================
@@ -467,9 +522,9 @@ function deleteNearestROI(e: MouseEvent) {
   const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
   const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
-  const distances = freehandROIs.map(roi => {
-    const pts = roi.points.map(p => cornerstone.pixelToCanvas(element, p));
-    const dists = pts.map(p => Math.hypot(p.x - clickCanvas.x, p.y - clickCanvas.y));
+  const distances = freehandROIs.map((roi) => {
+    const pts = roi.points.map((p) => cornerstone.pixelToCanvas(element, p));
+    const dists = pts.map((p) => Math.hypot(p.x - clickCanvas.x, p.y - clickCanvas.y));
     return Math.min(...dists);
   });
 
@@ -488,8 +543,27 @@ function deleteNearestROI(e: MouseEvent) {
 freehandBtn.addEventListener("click", () => {
   if (!freehandActive) {
     element.addEventListener("cornerstoneimagerendered", drawFreehand);
-    element.addEventListener("mousedown", startDraw);
-    element.addEventListener("mouseup", endDraw);
+    element.addEventListener("mousedown", (e) => {
+      // Detecta clic sobre texto o ROI
+      const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+      const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+      const clickedLabel = freehandROIs.find((roi) => {
+        const label = roi.labelPos;
+        return (
+          Math.abs(label.x - clickCanvas.x) < 80 &&
+          Math.abs(label.y - clickCanvas.y) < 30
+        );
+      });
+
+      if (clickedLabel) startMoveLabel(e);
+      else startDraw(e);
+    });
+
+    element.addEventListener("mouseup", (e) => {
+      if (movingLabel) endMoveLabel();
+      else endDraw();
+    });
+
     element.addEventListener("dblclick", deleteNearestROI);
     freehandBtn.classList.add("active");
     (element as HTMLDivElement).style.cursor = "crosshair";
