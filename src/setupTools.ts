@@ -24,8 +24,8 @@ export function setupTools(element: HTMLElement) {
   setupWindowLevelTool(element);
   setupInvertTool(element);
   setupCrosshairTool(element);
-
-
+  setupRotateTool(element);
+  setupRotateTool(element);
   
   //Herramientas de anotación / etiquetado
   
@@ -240,6 +240,72 @@ function setupCrosshairTool(element: HTMLElement) {
     context.restore();
   });
 }
+
+
+// ROTATE TOOL 
+
+function setupRotateTool(element: HTMLElement) {
+  const bindRotate = () => {
+    const rotateBtn = document.getElementById("rotateBtn") as HTMLButtonElement | null;
+    if (!rotateBtn) {
+      console.warn("RotateTool: botón #rotateBtn no encontrado todavía. Reintentando en DOMContentLoaded…");
+      return false;
+    }
+
+    let rotateActive = false;
+    let lastX: number | null = null;
+
+    rotateBtn.addEventListener("click", () => {
+      rotateActive = !rotateActive;
+      rotateBtn.classList.toggle("active", rotateActive);
+      element.style.cursor = rotateActive ? "grab" : "default";
+      if (!rotateActive) lastX = null;
+      console.log(`RotateTool: ${rotateActive ? "ACTIVA" : "INACTIVA"}`);
+    });
+
+    element.addEventListener("mousedown", (e: MouseEvent) => {
+      if (!rotateActive) return;
+      lastX = e.clientX;
+      element.style.cursor = "grabbing";
+    });
+
+    element.addEventListener("mousemove", (e: MouseEvent) => {
+      if (!rotateActive || lastX === null) return;
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+
+      const viewport = cornerstone.getViewport(element);
+      if (!viewport) return;
+
+      const sensitivity = 0.4; // ajusta si quieres más/menos “suave”
+      viewport.rotation = (viewport.rotation + dx * sensitivity) % 360;
+      cornerstone.setViewport(element, viewport);
+    });
+
+    element.addEventListener("mouseup", () => {
+      if (!rotateActive) return;
+      lastX = null;
+      element.style.cursor = "grab";
+    });
+
+    console.log("RotateTool: listeners vinculados");
+    return true;
+  };
+
+  // Intento inmediato
+  const okNow = bindRotate();
+  if (okNow) return;
+
+  // Fallback: si aún no existe el botón, nos suscribimos a DOMContentLoaded
+  const onReady = () => {
+    if (bindRotate()) {
+      document.removeEventListener("DOMContentLoaded", onReady);
+    }
+  };
+  document.addEventListener("DOMContentLoaded", onReady);
+}
+
+
 
 
 

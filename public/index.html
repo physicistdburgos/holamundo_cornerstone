@@ -79,7 +79,7 @@
       }
 
       /* ==============================
-         🔹 Área del visor DICOM
+         Área del visor DICOM
       =============================== */
       #dicomViewer {
         flex: 1;
@@ -106,7 +106,7 @@
   </head>
 
   <body>
-    <!-- 🔹 Barra lateral izquierda -->
+    <!-- Barra lateral izquierda -->
     <div id="toolbar">
       <img id="logo" src="./imagenes/logo_AT.png" alt="Logo" />
       <button id="zoomBtn">Zoom</button>
@@ -119,21 +119,23 @@
       <button id="freehandBtn">Freehand ROI</button>
       <button id="rectBtn">Rectangle ROI</button>
       <button id="crosshairBtn">Crosshair</button>
+      <button id="rotateBtn">Rotate</button>
+
 
     </div>
 
-    <!-- 🔹 Contenedor del visor con encabezado -->
+    <!-- Contenedor del visor con encabezado -->
     <div id="dicomContainer">
-      <!-- 🩻 Encabezado superior -->
+      <!-- Encabezado superior -->
       <div id="header">Visor DICOM - Mamografía</div>
 
-      <!-- 🩻 Área principal del visor -->
+      <!-- Área principal del visor -->
       <div id="dicomViewer">
         <div id="dicomImage"></div>
       </div>
     </div>
 
-    <!-- ✅ Cargar el script después de que el DOM esté listo -->
+    <!-- Cargar el script después de que el DOM esté listo -->
     <script>
       document.addEventListener("DOMContentLoaded", () => {
         const script = document.createElement("script");
