@@ -1,11 +1,10 @@
 // src/Tools/RectangleTool.ts
 
+// RECTANGLE ROOL 
+
 import * as cornerstone from "cornerstone-core";
-import * as cornerstoneTools from "cornerstone-tools";
 
 export function setupRectangleTool(element: HTMLElement) {
-
-// RECTANGLE ROOL 
 
 const rectBtn = document.getElementById("rectBtn") as HTMLButtonElement;
 let rectActive = false;

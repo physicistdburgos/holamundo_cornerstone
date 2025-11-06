@@ -4,6 +4,8 @@
 //Imports de Cornerstone
 import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
+import * as dicomParser from "dicom-parser";
+import Hammer from "hammerjs";
 
 //Imports de tus herramientas ROI (etiquetado)
 import { setupPointTool } from "./Tools/PointTool";
@@ -11,6 +13,78 @@ import { setupRulerTool } from "./Tools/RulerTool";
 import { setupEllipseTool } from "./Tools/EllipseTool";
 import { setupRectangleTool } from "./Tools/RectangleTool";
 import { setupFreeHandTool } from "./Tools/FreeHandTool";
+import { setupArrowTool } from "./Tools/ArrowTool";
+
+// Dependencias Externas
+cornerstoneTools.external.cornerstone = cornerstone;
+cornerstoneTools.external.Hammer = Hammer;
+cornerstoneTools.external.dicomParser = dicomParser;
+
+// Inicialización global de Cornerstone Tools
+cornerstoneTools.init();
+
+// 🎨 Estilos globales
+// 1) Fuente de texto
+if (cornerstoneTools?.textStyle?.setFont) {
+  // API clásica
+  cornerstoneTools.textStyle.setFont("13px Arial");
+} else if (cornerstoneTools?.store) {
+  // Algunas compilaciones guardan el estilo en store.state
+  cornerstoneTools.store.state = cornerstoneTools.store.state || {};
+  cornerstoneTools.store.state.textStyle = {
+    ...(cornerstoneTools.store.state.textStyle || {}),
+    font: "13px Arial",
+    color: "rgb(0,255,0)",
+    background: "rgba(0,0,0,0.7)",
+  };
+}
+
+// 2) Colores/anchos de herramienta
+if (cornerstoneTools?.toolStyle?.setToolWidth) {
+  cornerstoneTools.toolStyle.setToolWidth(2);
+}
+if (cornerstoneTools?.toolStyle?.setToolColor) {
+  // Algunas builds 4.x aún lo exponen
+  cornerstoneTools.toolStyle.setToolColor("rgb(200,200,200)"); // inactivo (gris)
+}
+if (cornerstoneTools?.toolStyle?.setActiveColor) {
+  cornerstoneTools.toolStyle.setActiveColor("rgb(0,255,0)");   // activo (verde)
+}
+
+// 3) Handles (puntos de control)
+if (cornerstoneTools?.toolStyle?.setHandleRadius) {
+  cornerstoneTools.toolStyle.setHandleRadius(6);
+}
+if (cornerstoneTools?.toolStyle?.setFillColor) {
+  cornerstoneTools.toolStyle.setFillColor("rgba(0,255,0,0.25)");
+}
+if (cornerstoneTools?.toolStyle?.setStrokeColor) {
+  cornerstoneTools.toolStyle.setStrokeColor("rgb(0,255,0)");
+}
+
+// Fallback para builds donde los setters anteriores no existen (p. ej. 4.22.1)
+if (cornerstoneTools?.store) {
+  const st = cornerstoneTools.store.state || (cornerstoneTools.store.state = {});
+  // toolStyle
+  st.toolStyle = {
+    ...(st.toolStyle || {}),
+    width: st.toolStyle?.width ?? 2,
+  };
+  // toolColors (algunas builds lo agrupan así)
+  st.toolColors = {
+    ...(st.toolColors || {}),
+    defaultColor: st.toolColors?.defaultColor ?? "rgb(200,200,200)",
+    activeColor: st.toolColors?.activeColor ?? "rgb(0,255,0)",
+  };
+  // handleStyle (nombres típicos en varias subversiones)
+  st.handleStyle = {
+    ...(st.handleStyle || {}),
+    radius: st.handleStyle?.radius ?? 6,
+    fill: st.handleStyle?.fill ?? "rgba(0,255,0,0.25)",
+    stroke: st.handleStyle?.stroke ?? "rgb(0,255,0)",
+  };
+}
+
 
 
 // setupTools principal
@@ -34,6 +108,7 @@ export function setupTools(element: HTMLElement) {
   setupEllipseTool(element);
   setupRectangleTool(element);
   setupFreeHandTool(element);
+  setupArrowTool(element);
 }
 
 

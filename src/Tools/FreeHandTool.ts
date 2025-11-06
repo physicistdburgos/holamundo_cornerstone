@@ -1,12 +1,10 @@
 // src/Tools/FreeHandTool.ts
 
+// FREEHAND TOOL
+
 import * as cornerstone from "cornerstone-core";
-import * as cornerstoneTools from "cornerstone-tools";
 
 export function setupFreeHandTool(element: HTMLElement) {
-
-
-// FREEHAND TOOL 
 
 const freehandBtn = document.getElementById("freehandBtn") as HTMLButtonElement;
 let freehandActive = false;

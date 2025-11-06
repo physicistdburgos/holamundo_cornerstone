@@ -1,7 +1,6 @@
 // src/Tools/PointTool.ts
 
 import * as cornerstone from "cornerstone-core";
-import * as cornerstoneTools from "cornerstone-tools";
 
 export function setupPointTool(element: HTMLElement) {
    

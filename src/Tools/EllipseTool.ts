@@ -1,10 +1,10 @@
 // src/Tools/EllipseTool.ts
 
+// ELLIPSE TOOL
+
 import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
 export function setupEllipseTool(element: HTMLElement) {
-
-// ELLIPSE TOOL
 
 let ellipses: any[] = [];
 const EllipticalRoiTool = cornerstoneTools.EllipticalRoiTool;
