@@ -23,7 +23,8 @@ cornerstoneTools.external.dicomParser = dicomParser;
 // Inicialización global de Cornerstone Tools
 cornerstoneTools.init();
 
-// 🎨 Estilos globales
+// Estilos globales
+
 // 1) Fuente de texto
 if (cornerstoneTools?.textStyle?.setFont) {
   // API clásica
@@ -84,8 +85,6 @@ if (cornerstoneTools?.store) {
     stroke: st.handleStyle?.stroke ?? "rgb(0,255,0)",
   };
 }
-
-
 
 // setupTools principal
 
