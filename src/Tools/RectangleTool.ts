@@ -52,7 +52,7 @@ export function setupRectangleTool(element: HTMLElement) {
     rectBtn.classList.remove("active");
     (element as HTMLDivElement).style.cursor = "default";
 
-    // 🔸 Al desactivar, quitamos solo los listeners interactivos
+    // Al desactivar, quitamos solo los listeners interactivos
     element.removeEventListener("mousemove", handleMouseMoveHover);
     element.removeEventListener("mousedown", startRect);
     element.removeEventListener("mouseup", endRect);

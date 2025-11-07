@@ -4,73 +4,143 @@ import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
 import { registerTool, activateTool } from "./toolStateManager";
 
-export function setupRulerTool(element: HTMLElement) {
+  export function setupRulerTool(element: HTMLElement) {
   const LengthTool = cornerstoneTools.LengthTool;
   cornerstoneTools.addTool(LengthTool);
-  cornerstoneTools.setToolPassiveForElement(element, "Length");
+
+  // Estado inicial: visible pero sin interacción
+  cornerstoneTools.setToolEnabledForElement(element, "Length");
+  cornerstoneTools.setToolLockedForElement?.(element, "Length", true);
 
   const measureBtn = document.getElementById("measureBtn") as HTMLButtonElement;
-  const toggleMeasurementsBtn = document.getElementById("toggleMeasurementsBtn") as HTMLButtonElement;
-
   let measureActive = false;
-  let savedLengthData: any[] | null = null;
 
-  
   // Registro global
-  
-  registerTool("ruler", () => {
+    registerTool("ruler", () => {
     measureActive = false;
     measureBtn.classList.remove("active");
     element.style.cursor = "default";
-    cornerstoneTools.setToolPassiveForElement(element, "Length");
+
+    // Deja visibles las medidas pero sin permitir interacción
+    cornerstoneTools.setToolEnabledForElement(element, "Length");
+    cornerstoneTools.setToolLockedForElement?.(element, "Length", true);
   });
 
-  
   // Activar / desactivar herramienta
-  
   measureBtn.addEventListener("click", () => {
     if (!measureActive) {
       activateTool("ruler");
+      measureActive = true;
+      measureBtn.classList.add("active");
+      element.style.cursor = "crosshair";
+
       cornerstoneTools.setToolActiveForElement(element, "Length", {
         mouseButtonMask: 1,
       });
-      measureBtn.classList.add("active");
-      element.style.cursor = "crosshair";
-      measureActive = true;
+      cornerstoneTools.setToolLockedForElement?.(element, "Length", false);
     } else {
-      cornerstoneTools.setToolPassiveForElement(element, "Length");
+      measureActive = false;
       measureBtn.classList.remove("active");
       element.style.cursor = "default";
-      measureActive = false;
+
+      cornerstoneTools.setToolEnabledForElement(element, "Length");
+      cornerstoneTools.setToolLockedForElement?.(element, "Length", true);
     }
   });
 
-  
-  // Mostrar / Ocultar mediciones
-  
-  toggleMeasurementsBtn?.addEventListener("click", () => {
-    const state = cornerstoneTools.getToolState(element, "Length");
+  // Doble clic para eliminar una medición
+  element.addEventListener("dblclick", (e: MouseEvent) => {
+    if (!measureActive) return;
 
-    if (savedLengthData === null) {
-      const current = state?.data ?? [];
-      if (current.length === 0) return;
+    const toolState = cornerstoneTools.getToolState(element, "Length");
+    if (!toolState || !toolState.data || toolState.data.length === 0) return;
 
-      savedLengthData = current.map((d: any) => ({ ...d }));
-      cornerstoneTools.clearToolState(element, "Length");
-      cornerstone.updateImage(element);
+    const lengths = toolState.data;
+    const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+    const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
-      toggleMeasurementsBtn.classList.remove("active");
-      toggleMeasurementsBtn.textContent = "Medidas OFF";
-    } else {
-      cornerstoneTools.clearToolState(element, "Length");
-      savedLengthData.forEach((d) =>
-        cornerstoneTools.addToolState(element, "Length", d)
+    // Tolerancia de proximidad para eliminar (px)
+    const tolerance = 10;
+
+    const indexToRemove = lengths.findIndex((line: any) => {
+      const start = cornerstone.pixelToCanvas(element, line.handles.start);
+      const end = cornerstone.pixelToCanvas(element, line.handles.end);
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSq = dx * dx + dy * dy;
+
+      if (lengthSq === 0) return false;
+
+      const t = Math.max(
+        0,
+        Math.min(1, ((clickCanvas.x - start.x) * dx + (clickCanvas.y - start.y) * dy) / lengthSq)
       );
-      savedLengthData = null;
-      cornerstone.updateImage(element);
+      const projX = start.x + t * dx;
+      const projY = start.y + t * dy;
+      const dist = Math.sqrt(
+        (clickCanvas.x - projX) ** 2 + (clickCanvas.y - projY) ** 2
+      );
 
-      toggleMeasurementsBtn.classList.add("active");
-      toggleMeasurementsBtn.textContent = "Medidas ON";
+      return dist <= tolerance;
+    });
+
+    if (indexToRemove !== -1) {
+      lengths.splice(indexToRemove, 1);
+      cornerstone.updateImage(element);
     }
   });
+
+  // --- GUARD: evita hover o movimiento de líneas si el botón está apagado ---
+  function isPointNearRuler(e: MouseEvent): boolean {
+    const toolState = cornerstoneTools.getToolState(element, "Length");
+    if (!toolState || !toolState.data || toolState.data.length === 0) return false;
+
+    const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+    const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+    const tolerance = 10;
+
+    return toolState.data.some((line: any) => {
+      const start = cornerstone.pixelToCanvas(element, line.handles.start);
+      const end = cornerstone.pixelToCanvas(element, line.handles.end);
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSq = dx * dx + dy * dy;
+
+      if (lengthSq === 0) return false;
+
+      const t = Math.max(
+        0,
+        Math.min(1, ((clickCanvas.x - start.x) * dx + (clickCanvas.y - start.y) * dy) / lengthSq)
+      );
+      const projX = start.x + t * dx;
+      const projY = start.y + t * dy;
+      const dist = Math.sqrt(
+        (clickCanvas.x - projX) ** 2 + (clickCanvas.y - projY) ** 2
+      );
+
+      return dist <= tolerance;
+    });
+  }
+
+  const guardRulerInteraction = (e: MouseEvent) => {
+    if (!measureActive && isPointNearRuler(e)) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+
+      const toolState = cornerstoneTools.getToolState(element, "Length");
+      if (toolState?.data) {
+        toolState.data.forEach((l: any) => {
+          l.active = false;
+          l.highlight = false;
+        });
+        cornerstone.updateImage(element);
+      }
+    }
+  };
+
+  element.addEventListener("mousemove", guardRulerInteraction);
+  element.addEventListener("mousedown", guardRulerInteraction);
+
 }
+
+

@@ -205,10 +205,11 @@ function setupWindowLevelTool(element: HTMLElement) {
   const windowBtn = document.getElementById("windowBtn") as HTMLButtonElement;
   let windowActive = false;
 
+  // Valores iniciales (ajusta según tu imagen base)
   let ww = 1200;
   let wc = 600;
-  let wwHudTimeout: any = null;
 
+  // HUD (overlay con valores)
   const hud = document.createElement("div");
   hud.style.position = "absolute";
   hud.style.top = "10px";
@@ -221,31 +222,35 @@ function setupWindowLevelTool(element: HTMLElement) {
   hud.style.fontFamily = "Arial";
   hud.style.pointerEvents = "none";
   hud.style.opacity = "0";
-  hud.style.transition = "opacity 0.4s ease";
+  hud.style.transition = "opacity 0.3s ease";
   hud.innerText = `WW: ${ww} | WC: ${wc}`;
   element.parentElement?.appendChild(hud);
 
-  function updateWWWC() {
+  let hudTimeout: number | null = null;
+
+  function showHUD() {
+    hud.innerText = `WW: ${Math.round(ww)} | WC: ${Math.round(wc)}`;
+    hud.style.opacity = "1";
+    if (hudTimeout) clearTimeout(hudTimeout);
+    hudTimeout = window.setTimeout(() => (hud.style.opacity = "0"), 1500);
+  }
+
+  function updateViewport() {
     const viewport = cornerstone.getViewport(element);
     viewport.voi.windowWidth = ww;
     viewport.voi.windowCenter = wc;
     cornerstone.setViewport(element, viewport);
-    showHud();
+    showHUD();
   }
 
-  function showHud() {
-    hud.innerText = `WW: ${Math.round(ww)} | WC: ${Math.round(wc)}`;
-    hud.style.opacity = "1";
-    clearTimeout(wwHudTimeout);
-    wwHudTimeout = setTimeout(() => (hud.style.opacity = "0"), 1500);
-  }
-
+  // Registro global
   registerTool("window", () => {
     windowActive = false;
     windowBtn.classList.remove("active");
     element.style.cursor = "default";
   });
 
+  // Botón toggle
   windowBtn?.addEventListener("click", () => {
     if (!windowActive) {
       activateTool("window");
@@ -259,6 +264,7 @@ function setupWindowLevelTool(element: HTMLElement) {
     }
   });
 
+  // Rueda del mouse → ajustar contraste/brillo
   element.addEventListener("wheel", (e: WheelEvent) => {
     if (!windowActive) return;
     e.preventDefault();
@@ -267,14 +273,7 @@ function setupWindowLevelTool(element: HTMLElement) {
     wc -= step * 0.5;
     ww = Math.max(100, Math.min(4095, ww));
     wc = Math.max(-500, Math.min(4500, wc));
-    updateWWWC();
-  });
-
-  element.addEventListener("dblclick", () => {
-    if (!windowActive) return;
-    ww = 1200;
-    wc = 600;
-    updateWWWC();
+    updateViewport();
   });
 }
 
