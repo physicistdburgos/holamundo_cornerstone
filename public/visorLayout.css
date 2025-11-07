@@ -1,0 +1,142 @@
+/* ===========================
+   Layout general
+=========================== */
+body {
+  display: flex;
+  height: 100vh;
+  margin: 0;
+  background-color: #000;
+  color: #fff;
+  font-family: "Segoe UI", Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* ===========================
+   Barra lateral izquierda
+=========================== */
+.sidebar {
+  width: 220px;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border-right: 2px solid #333;
+  box-shadow: 4px 0 10px rgba(0, 0, 0, 0.6);
+  overflow-y: auto;
+}
+
+#logo {
+  width: 120px;
+  height: auto;
+  margin-bottom: 1rem;
+}
+
+.sidebar h3 {
+  margin: 0.5rem 0;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #66b2ff;
+  border-bottom: 1px solid #333;
+  padding-bottom: 0.3rem;
+  width: 100%;
+  text-align: center;
+}
+
+/* Separador visual entre secciones */
+.divider {
+  width: 80%;
+  border: none;
+  border-top: 1px solid #333;
+  margin: 1rem 0;
+}
+
+/* ===========================
+   Grilla de botones (2xN)
+=========================== */
+.button-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  width: 100%;
+  margin-bottom: 0.8rem;
+}
+
+/* ===========================
+   Estilo de botones
+=========================== */
+.sidebar button {
+  background-color: #2a2a2a;
+  border: 1px solid #444;
+  color: white;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.2rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.sidebar button:hover {
+  background-color: #444;
+  border-color: #66b2ff;
+}
+
+.sidebar button.active {
+  background-color: #007bff;
+  border-color: #007bff;
+  box-shadow: 0 0 6px #007bff;
+}
+
+/* ===========================
+   Contenedor central del visor
+=========================== */
+#dicomContainer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+#header {
+  background-color: #111;
+  text-align: center;
+  padding: 12px 0;
+  border-bottom: 2px solid #333;
+  font-size: 20px;
+  font-weight: 600;
+  color: #0d6efd;
+  letter-spacing: 0.3px;
+}
+
+#dicomViewer {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000;
+}
+
+#dicomImage {
+  width: 1024px;
+  height: 1024px;
+  background-color: black;
+  border: 1px solid #555;
+}
+
+/* ===========================
+   Scrollbar estética
+=========================== */
+.sidebar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.sidebar::-webkit-scrollbar-thumb {
+  background-color: #333;
+  border-radius: 4px;
+}
+
+.sidebar::-webkit-scrollbar-thumb:hover {
+  background-color: #555;
+}
+

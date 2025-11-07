@@ -1,142 +1,54 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cornerstone DICOM Viewer</title>
-    <style>
-      /* ==============================
-        Layout general
-      =============================== */
-      body {
-        margin: 0;
-        background-color: #000;
-        display: flex;
-        height: 100vh;
-        overflow: hidden;
-        color: white;
-        font-family: "Segoe UI", Arial, sans-serif;
-      }
 
-      /* ==============================
-        Barra lateral de herramientas
-      =============================== */
-      #toolbar {
-        width: 120px;
-        background-color: #1c1c1c;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding-top: 20px;
-        border-right: 2px solid #333;
-      }
-
-      #toolbar button {
-        width: 90%;
-        margin: 8px 0;
-        padding: 10px;
-        background-color: #2a2a2a;
-        color: #f0f0f0;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 500;
-        transition: all 0.2s ease-in-out;
-        text-align: center;
-      }
-
-      #toolbar button.active {
-        background-color: #0d6efd;
-        box-shadow: 0 0 6px #0d6efd;
-      }
-
-      #toolbar button:hover {
-        background-color: #444;
-      }
-
-      /* ==============================
-         Contenedor del visor principal
-      =============================== */
-      #dicomContainer {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-      }
-
-      /* ==============================
-         Encabezado superior
-      =============================== */
-      #header {
-        background-color: #111;
-        text-align: center;
-        padding: 12px 0;
-        border-bottom: 2px solid #333;
-        font-size: 20px;
-        font-weight: 600;
-        color: #0d6efd;
-        letter-spacing: 0.3px;
-      }
-
-      /* ==============================
-         Área del visor DICOM
-      =============================== */
-      #dicomViewer {
-        flex: 1;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        background-color: #000;
-      }
-
-      #dicomImage {
-        width: 1024px;
-        height: 1024px;
-        background-color: black;
-        border: 1px solid #777;
-      }
-
-      #logo {
-        width: 100px; /* ajusta el tamaño según tu logo */
-        height: auto;
-        margin-bottom: 10px; /* separa del primer botón */
-        border-radius: 0px; /* opcional: bordes redondeados */
-      }
-    </style>
+    <!-- Enlace al CSS externo -->
+    <link rel="stylesheet" href="./visorLayout.css" />
   </head>
 
   <body>
-    <!-- Barra lateral izquierda -->
-    <div id="toolbar">
+    <!-- Barra lateral única (izquierda) -->
+    <div class="sidebar">
       <img id="logo" src="./imagenes/logo_AT.png" alt="Logo" />
-      <button id="zoomBtn">Zoom</button>
-      <button id="panBtn">Pan</button>
-      <button id="windowBtn" class="tool-button">W/L</button>
-      <button id="crosshairBtn">Crosshair</button>
-      <button id="rotateBtn">Rotate</button>
-      <button id="invertBtn">Invert</button>
-      <button id="measureBtn">Length</button>
-      <button id="ellipseBtn">Elliptical ROI</button>
-      <button id="pointBtn">Mark</button>
-      <button id="freehandBtn">Freehand ROI</button>
-      <button id="rectBtn">Rectangle ROI</button>
-      <button id="arrowBtn">Arrow</button>
 
+      <!-- Sección de visualización -->
+      <h3>Visualización</h3>
+      <div class="button-grid">
+        <button id="zoomBtn">Zoom</button>
+        <button id="panBtn">Pan</button>
+        <button id="windowBtn">W/L</button>
+        <button id="crosshairBtn">Crosshair</button>
+        <button id="rotateBtn">Rotate</button>
+        <button id="invertBtn">Invert</button>
+      </div>
 
+      <!-- Separador visual -->
+      <hr class="divider" />
+
+      <!-- Sección de anotación -->
+      <h3>Anotación</h3>
+      <div class="button-grid">
+        <button id="measureBtn">Length</button>
+        <button id="ellipseBtn">Elliptical ROI</button>
+        <button id="pointBtn">Point</button>
+        <button id="freehandBtn">Freehand ROI</button>
+        <button id="rectBtn">Rectangle ROI</button>
+        <button id="arrowBtn">Arrow</button>
+      </div>
     </div>
 
-    <!-- Contenedor del visor con encabezado -->
+    <!-- Contenedor del visor -->
     <div id="dicomContainer">
-      <!-- Encabezado superior -->
       <div id="header">Visor DICOM - Mamografía</div>
-
-      <!-- Área principal del visor -->
       <div id="dicomViewer">
         <div id="dicomImage"></div>
       </div>
     </div>
 
-    <!-- Cargar el script después de que el DOM esté listo -->
+    <!-- Cargar script principal del visor -->
     <script>
       document.addEventListener("DOMContentLoaded", () => {
         const script = document.createElement("script");
@@ -146,3 +58,5 @@
     </script>
   </body>
 </html>
+
+
