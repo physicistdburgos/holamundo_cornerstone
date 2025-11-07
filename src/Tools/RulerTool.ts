@@ -1,23 +1,38 @@
-// src/Tools/RulerTool.ts
+// RULER TOOL
 
 import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
-export function setupRulerTool(element: HTMLElement) {
-  // ...
+import { registerTool, activateTool } from "./toolStateManager";
 
-// RULER TOOL
-  
+export function setupRulerTool(element: HTMLElement) {
   const LengthTool = cornerstoneTools.LengthTool;
   cornerstoneTools.addTool(LengthTool);
   cornerstoneTools.setToolPassiveForElement(element, "Length");
 
   const measureBtn = document.getElementById("measureBtn") as HTMLButtonElement;
-  let measureActive = false;
+  const toggleMeasurementsBtn = document.getElementById("toggleMeasurementsBtn") as HTMLButtonElement;
 
+  let measureActive = false;
+  let savedLengthData: any[] | null = null;
+
+  
+  // Registro global
+  
+  registerTool("ruler", () => {
+    measureActive = false;
+    measureBtn.classList.remove("active");
+    element.style.cursor = "default";
+    cornerstoneTools.setToolPassiveForElement(element, "Length");
+  });
+
+  
+  // Activar / desactivar herramienta
+  
   measureBtn.addEventListener("click", () => {
     if (!measureActive) {
+      activateTool("ruler");
       cornerstoneTools.setToolActiveForElement(element, "Length", {
-        mouseButtonMask: 1, // clic izquierdo para medir
+        mouseButtonMask: 1,
       });
       measureBtn.classList.add("active");
       element.style.cursor = "crosshair";
@@ -33,32 +48,20 @@ export function setupRulerTool(element: HTMLElement) {
   
   // Mostrar / Ocultar mediciones
   
-  const toggleMeasurementsBtn = document.getElementById(
-    "toggleMeasurementsBtn"
-  ) as HTMLButtonElement;
-
-  // Guardará temporalmente las mediciones cuando estén ocultas
-  let savedLengthData: any[] | null = null;
-
-  toggleMeasurementsBtn.addEventListener("click", () => {
+  toggleMeasurementsBtn?.addEventListener("click", () => {
     const state = cornerstoneTools.getToolState(element, "Length");
 
     if (savedLengthData === null) {
-      // Ocultar: guardar y limpiar
       const current = state?.data ?? [];
-      if (current.length === 0) return; // no hay nada que ocultar
+      if (current.length === 0) return;
 
-      // Guardar copia
       savedLengthData = current.map((d: any) => ({ ...d }));
-
-      // Limpiar del visor
       cornerstoneTools.clearToolState(element, "Length");
       cornerstone.updateImage(element);
 
       toggleMeasurementsBtn.classList.remove("active");
       toggleMeasurementsBtn.textContent = "Medidas OFF";
     } else {
-      // Mostrar: restaurar las guardadas
       cornerstoneTools.clearToolState(element, "Length");
       savedLengthData.forEach((d) =>
         cornerstoneTools.addToolState(element, "Length", d)
@@ -70,5 +73,4 @@ export function setupRulerTool(element: HTMLElement) {
       toggleMeasurementsBtn.textContent = "Medidas ON";
     }
   });
-
-  }
+}

@@ -1,8 +1,8 @@
-
-// ARROW ANNOTATE TOOL 
+// ARROW ANNOTATE TOOL
 
 import * as cornerstoneTools from "cornerstone-tools";
 import * as cornerstone from "cornerstone-core";
+import { registerTool, activateTool } from "./toolStateManager";
 
 export function setupArrowTool(element: HTMLElement) {
   const { ArrowAnnotateTool } = cornerstoneTools;
@@ -18,20 +18,38 @@ export function setupArrowTool(element: HTMLElement) {
     return;
   }
 
-  let active = false;
+  let arrowActive = false;
 
+  
+  // Registro global
+ 
+  registerTool("arrow", () => {
+    arrowActive = false;
+    arrowBtn.classList.remove("active");
+    element.style.cursor = "default";
+    cornerstoneTools.setToolPassiveForElement(element, "ArrowAnnotate");
+  });
+
+ 
+  // Activar / desactivar herramienta
+ 
   arrowBtn.addEventListener("click", () => {
-    active = !active;
-    arrowBtn.classList.toggle("active", active);
-
-    if (active) {
+    if (!arrowActive) {
+      activateTool("arrow");
+      arrowActive = true;
+      arrowBtn.classList.add("active");
+      element.style.cursor = "crosshair";
       cornerstoneTools.setToolActiveForElement(element, "ArrowAnnotate", {
         mouseButtonMask: 1,
       });
     } else {
+      arrowActive = false;
+      arrowBtn.classList.remove("active");
+      element.style.cursor = "default";
       cornerstoneTools.setToolPassiveForElement(element, "ArrowAnnotate");
     }
   });
 }
+
 
 

@@ -1,8 +1,7 @@
-// src/Tools/RectangleTool.ts
-
-// RECTANGLE ROOL 
+// RECTANGLE TOOL
 
 import * as cornerstone from "cornerstone-core";
+import { registerTool, activateTool } from "./toolStateManager";
 
 export function setupRectangleTool(element: HTMLElement) {
   const rectBtn = document.getElementById("rectBtn") as HTMLButtonElement;
@@ -37,10 +36,32 @@ export function setupRectangleTool(element: HTMLElement) {
     labelPos: { x: number; y: number };
   }[] = [];
 
-  const colorActive = "#00FF00"; // Verde
-  const colorInactive = "#CCCCCC"; // Gris claro
+  const colorActive = "#00FF00";
+  const colorInactive = "#CCCCCC";
 
-  // ---- Calcular estadísticas ----
+  
+  //Mantener persistencia del dibujo (listener siempre activo)
+  
+  element.addEventListener("cornerstoneimagerendered", drawRectangles);
+
+  
+  // Registro global
+  
+  registerTool("rectangle", () => {
+    rectActive = false;
+    rectBtn.classList.remove("active");
+    (element as HTMLDivElement).style.cursor = "default";
+
+    // 🔸 Al desactivar, quitamos solo los listeners interactivos
+    element.removeEventListener("mousemove", handleMouseMoveHover);
+    element.removeEventListener("mousedown", startRect);
+    element.removeEventListener("mouseup", endRect);
+    element.removeEventListener("dblclick", deleteRectROI);
+  });
+
+ 
+  // Cálculo de estadísticas
+  
   function calculateRectStats(start: any, end: any) {
     const image = cornerstone.getImage(element);
     const pixelData = image.getPixelData();
@@ -74,7 +95,6 @@ export function setupRectangleTool(element: HTMLElement) {
       );
     }
 
-    // PixelSpacing
     let sx = 1,
       sy = 1;
     try {
@@ -93,7 +113,9 @@ export function setupRectangleTool(element: HTMLElement) {
     return { width: realWidth, height: realHeight, area, mean, std };
   }
 
-  // ---- Dibujo ----
+  
+  // Dibujo (se mantiene siempre activo)
+  
   function drawRectangles(evt: any) {
     const eventData = evt.detail;
     const ctx = eventData.canvasContext.canvas.getContext("2d");
@@ -141,7 +163,6 @@ export function setupRectangleTool(element: HTMLElement) {
         ];
         const label = rect.labelPos;
 
-        // Calcular punto más cercano del borde del ROI hacia el texto
         const rectCenterX = startCanvas.x + rectWidth / 2;
         const rectCenterY = startCanvas.y + rectHeight / 2;
 
@@ -152,17 +173,13 @@ export function setupRectangleTool(element: HTMLElement) {
         let anchorY = rectCenterY;
 
         if (Math.abs(dx) > Math.abs(dy)) {
-          // Texto a izquierda o derecha
-          anchorX =
-            dx > 0 ? startCanvas.x + rectWidth : startCanvas.x;
+          anchorX = dx > 0 ? startCanvas.x + rectWidth : startCanvas.x;
           anchorY = Math.min(
             Math.max(label.y, startCanvas.y),
             endCanvas.y
           );
         } else {
-          // Texto arriba o abajo
-          anchorY =
-            dy > 0 ? startCanvas.y + rectHeight : startCanvas.y;
+          anchorY = dy > 0 ? startCanvas.y + rectHeight : startCanvas.y;
           anchorX = Math.min(
             Math.max(label.x, startCanvas.x),
             endCanvas.x
@@ -184,7 +201,7 @@ export function setupRectangleTool(element: HTMLElement) {
       }
     });
 
-    // Rectángulo dinámico mientras se dibuja
+    // Rectángulo en curso
     if (drawingRect && rectStart && rectEnd) {
       const startCanvas = cornerstone.pixelToCanvas(element, rectStart);
       const endCanvas = cornerstone.pixelToCanvas(element, rectEnd);
@@ -200,138 +217,147 @@ export function setupRectangleTool(element: HTMLElement) {
     ctx.restore();
   }
 
-  // ---- Hover detection (ROI o texto) ----
+  
+  // Eventos
+  
   function handleMouseMoveHover(e: MouseEvent) {
-    const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
-    const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+  const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+  const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
-    hoveredRect =
-      rectangles.find((r) => {
-        const s = cornerstone.pixelToCanvas(element, r.start);
-        const en = cornerstone.pixelToCanvas(element, r.end);
-        const label = r.labelPos;
-        const isOverROI =
-          clickCanvas.x >= Math.min(s.x, en.x) &&
-          clickCanvas.x <= Math.max(s.x, en.x) &&
-          clickCanvas.y >= Math.min(s.y, en.y) &&
-          clickCanvas.y <= Math.max(s.y, en.y);
-        const isOverLabel =
-          Math.abs(label.x - clickCanvas.x) < 100 &&
-          Math.abs(label.y - clickCanvas.y) < 40;
-        return isOverROI || isOverLabel;
-      }) || null;
+  hoveredRect =
+    rectangles.find((r) => {
+      const s = cornerstone.pixelToCanvas(element, r.start);
+      const en = cornerstone.pixelToCanvas(element, r.end);
+      const label = r.labelPos;
+      const overROI =
+        clickCanvas.x >= Math.min(s.x, en.x) &&
+        clickCanvas.x <= Math.max(s.x, en.x) &&
+        clickCanvas.y >= Math.min(s.y, en.y) &&
+        clickCanvas.y <= Math.max(s.y, en.y);
 
-    cornerstone.updateImage(element);
-  }
-
-  // ---- Iniciar acción ----
-  function startRect(e: MouseEvent) {
-    if (hoveredRect) {
-      const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
-      const clickCanvas = cornerstone.pixelToCanvas(element, coords);
-      const label = hoveredRect.labelPos;
-      const labelHit =
+      const overLabel =
         Math.abs(label.x - clickCanvas.x) < 100 &&
         Math.abs(label.y - clickCanvas.y) < 40;
 
-      selectedRect = hoveredRect;
+      return overROI || overLabel;
+    }) || null;
 
-      if (labelHit) {
-        movingLabel = true;
-        offsetLabelX = clickCanvas.x - label.x;
-        offsetLabelY = clickCanvas.y - label.y;
-      } else {
-        movingRect = true;
-        offsetX = coords.x - selectedRect.start.x;
-        offsetY = coords.y - selectedRect.start.y;
-      }
+  cornerstone.updateImage(element);
+}
+
+  function startRect(e: MouseEvent) {
+  if (!rectActive) return;
+
+  const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+  const clickCanvas = cornerstone.pixelToCanvas(element, coords); // CORRECTO
+
+  if (hoveredRect) {
+    selectedRect = hoveredRect;
+
+    const label = selectedRect.labelPos;
+    const labelHit =
+      Math.abs(label.x - clickCanvas.x) < 100 &&
+      Math.abs(label.y - clickCanvas.y) < 40;
+
+    if (labelHit) {
+      // Mover solo el texto (label)
+      movingLabel = true;
+      offsetLabelX = clickCanvas.x - label.x;
+      offsetLabelY = clickCanvas.y - label.y;
     } else {
-      drawingRect = true;
-      rectStart = cornerstone.pageToPixel(element, e.clientX, e.clientY);
-      rectEnd = { ...rectStart };
+      // Mover ROI completo
+      movingRect = true;
+      offsetX = coords.x - selectedRect.start.x;
+      offsetY = coords.y - selectedRect.start.y;
     }
-
-    element.addEventListener("mousemove", continueRect);
+  } else {
+    // Dibujar nuevo ROI
+    drawingRect = true;
+    rectStart = coords;
+    rectEnd = { ...coords };
   }
+
+  // Enganchar movimiento temporal
+  element.addEventListener("mousemove", continueRect);
+}
 
   function continueRect(e: MouseEvent) {
-    const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
+  const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
 
-    if (drawingRect) {
-      rectEnd = coords;
-      cornerstone.updateImage(element);
-    }
-
-    if (movingRect && selectedRect) {
-      const dx = coords.x - offsetX;
-      const dy = coords.y - offsetY;
-      const width = selectedRect.end.x - selectedRect.start.x;
-      const height = selectedRect.end.y - selectedRect.start.y;
-
-      // Mueve ROI y texto en conjunto
-      selectedRect.start.x = dx;
-      selectedRect.start.y = dy;
-      selectedRect.end.x = dx + width;
-      selectedRect.end.y = dy + height;
-
-      const sCanvas = cornerstone.pixelToCanvas(element, { x: dx, y: dy });
-      const eCanvas = cornerstone.pixelToCanvas(element, {
-        x: dx + width,
-        y: dy + height,
-      });
-      selectedRect.labelPos.x = Math.max(sCanvas.x, eCanvas.x) + 20;
-      selectedRect.labelPos.y =
-        (sCanvas.y + eCanvas.y) / 2 - 20;
-
-      cornerstone.updateImage(element);
-    }
-
-    if (movingLabel && selectedRect) {
-      const clickCanvas = cornerstone.pixelToCanvas(element, coords);
-      selectedRect.labelPos.x = clickCanvas.x - offsetLabelX;
-      selectedRect.labelPos.y = clickCanvas.y - offsetLabelY;
-      cornerstone.updateImage(element);
-    }
+  if (drawingRect) {
+    rectEnd = coords;
+    cornerstone.updateImage(element);
+    return;
   }
 
-  function endRect(e: MouseEvent) {
-    element.removeEventListener("mousemove", continueRect);
+  // Mover ROI completo
+  if (movingRect && selectedRect) {
+    const dx = coords.x - offsetX;
+    const dy = coords.y - offsetY;
+    const width = selectedRect.end.x - selectedRect.start.x;
+    const height = selectedRect.end.y - selectedRect.start.y;
 
-    if (drawingRect) {
-      const dx = Math.abs(rectEnd.x - rectStart.x);
-      const dy = Math.abs(rectEnd.y - rectStart.y);
+    selectedRect.start.x = dx;
+    selectedRect.start.y = dy;
+    selectedRect.end.x = dx + width;
+    selectedRect.end.y = dy + height;
 
-      if (dx > 3 && dy > 3) {
-        const stats = calculateRectStats(rectStart, rectEnd);
-        const startCanvas = cornerstone.pixelToCanvas(element, rectStart);
-        const endCanvas = cornerstone.pixelToCanvas(element, rectEnd);
+    // Se elimina el reposicionamiento automático del label
+    // El texto se queda fijo donde esté.
 
-        const labelPos = {
-          x: Math.max(startCanvas.x, endCanvas.x) + 20,
-          y: (startCanvas.y + endCanvas.y) / 2 - 20,
-        };
+    cornerstone.updateImage(element);
+    return;
+  }
 
-        rectangles.push({
-          id: Date.now(),
-          start: rectStart,
-          end: rectEnd,
-          stats,
-          labelPos,
-        });
-      }
-    }
-
-    drawingRect = false;
-    movingRect = false;
-    movingLabel = false;
-    selectedRect = null;
-    rectStart = rectEnd = null;
+  // Mover solo el label (texto)
+  if (movingLabel && selectedRect) {
+    const clickCanvas = cornerstone.pixelToCanvas(element, coords);
+    selectedRect.labelPos.x = clickCanvas.x - offsetLabelX;
+    selectedRect.labelPos.y = clickCanvas.y - offsetLabelY;
     cornerstone.updateImage(element);
   }
+}
 
-  // ---- Eliminar ROI con doble clic ----
+function endRect() {
+  // Este listener solo debe estar enganchado mientras hay acción
+  element.removeEventListener("mousemove", continueRect);
+
+  if (drawingRect) {
+    const dx = Math.abs(rectEnd.x - rectStart.x);
+    const dy = Math.abs(rectEnd.y - rectStart.y);
+
+    if (dx > 3 && dy > 3) {
+      const stats = calculateRectStats(rectStart, rectEnd);
+      const startCanvas = cornerstone.pixelToCanvas(element, rectStart);
+      const endCanvas = cornerstone.pixelToCanvas(element, rectEnd);
+      const labelPos = {
+        x: Math.max(startCanvas.x, endCanvas.x) + 20,
+        y: (startCanvas.y + endCanvas.y) / 2 - 20,
+      };
+
+      rectangles.push({
+        id: Date.now(),
+        start: rectStart,
+        end: rectEnd,
+        stats,
+        labelPos,
+      });
+    }
+  }
+
+  // Reset flags
+  drawingRect = false;
+  movingRect = false;
+  movingLabel = false;
+  selectedRect = null;
+  rectStart = rectEnd = null;
+
+  cornerstone.updateImage(element);
+}
+
   function deleteRectROI(e: MouseEvent) {
-    if (!rectangles.length) return;
+    if (!rectActive || !rectangles.length) return;
+
     const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
     const clickCanvas = cornerstone.pixelToCanvas(element, coords);
 
@@ -352,31 +378,41 @@ export function setupRectangleTool(element: HTMLElement) {
     }
   }
 
-  // ---- Activar / desactivar herramienta ----
-  rectBtn.addEventListener("click", () => {
-    if (!rectActive) {
-      element.addEventListener("cornerstoneimagerendered", drawRectangles);
-      element.addEventListener("mousemove", handleMouseMoveHover);
-      element.addEventListener("mousedown", startRect);
-      element.addEventListener("mouseup", endRect);
-      element.addEventListener("dblclick", deleteRectROI);
+  
+  // Activar / desactivar herramienta
+  
+rectBtn.addEventListener("click", () => {
+  if (!rectActive) {
+    activateTool("rectangle");
+    rectActive = true;
 
-      rectBtn.classList.add("active");
-      (element as HTMLDivElement).style.cursor = "crosshair";
-      rectActive = true;
-    } else {
-      element.removeEventListener("cornerstoneimagerendered", drawRectangles);
-      element.removeEventListener("mousemove", handleMouseMoveHover);
-      element.removeEventListener("mousedown", startRect);
-      element.removeEventListener("mouseup", endRect);
-      element.removeEventListener("dblclick", deleteRectROI);
+    // Sólo listeners de interacción "externa"
+    element.addEventListener("mousemove", handleMouseMoveHover);
+    element.addEventListener("mousedown", startRect);
+    element.addEventListener("mouseup", endRect);
+    element.addEventListener("dblclick", deleteRectROI);
 
-      rectBtn.classList.remove("active");
-      (element as HTMLDivElement).style.cursor = "default";
-      rectActive = false;
-    }
-  });
+    rectBtn.classList.add("active");
+    (element as HTMLDivElement).style.cursor = "crosshair";
+  } else {
+    rectActive = false;
+    rectBtn.classList.remove("active");
+    (element as HTMLDivElement).style.cursor = "default";
+
+    element.removeEventListener("mousemove", handleMouseMoveHover);
+    element.removeEventListener("mousedown", startRect);
+    element.removeEventListener("mouseup", endRect);
+    element.removeEventListener("dblclick", deleteRectROI);
+
+    // Por si quedó enganchado en una operación en curso:
+    element.removeEventListener("mousemove", continueRect);
+  }
+});
+
 }
+
+
+
 
 
 

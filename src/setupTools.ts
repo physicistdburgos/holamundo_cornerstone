@@ -1,11 +1,13 @@
-// src/setupTools.ts
-
+// setupTools.ts
 
 //Imports de Cornerstone
 import * as cornerstone from "cornerstone-core";
 import * as cornerstoneTools from "cornerstone-tools";
 import * as dicomParser from "dicom-parser";
 import Hammer from "hammerjs";
+
+//Imports del gestor global de herramientas
+import { registerTool, activateTool } from "./Tools/toolStateManager";
 
 //Imports de tus herramientas ROI (etiquetado)
 import { setupPointTool } from "./Tools/PointTool";
@@ -23,14 +25,13 @@ cornerstoneTools.external.dicomParser = dicomParser;
 // Inicialización global de Cornerstone Tools
 cornerstoneTools.init();
 
+
 // Estilos globales
 
 // 1) Fuente de texto
 if (cornerstoneTools?.textStyle?.setFont) {
-  // API clásica
   cornerstoneTools.textStyle.setFont("13px Arial");
 } else if (cornerstoneTools?.store) {
-  // Algunas compilaciones guardan el estilo en store.state
   cornerstoneTools.store.state = cornerstoneTools.store.state || {};
   cornerstoneTools.store.state.textStyle = {
     ...(cornerstoneTools.store.state.textStyle || {}),
@@ -45,11 +46,10 @@ if (cornerstoneTools?.toolStyle?.setToolWidth) {
   cornerstoneTools.toolStyle.setToolWidth(2);
 }
 if (cornerstoneTools?.toolStyle?.setToolColor) {
-  // Algunas builds 4.x aún lo exponen
-  cornerstoneTools.toolStyle.setToolColor("rgb(200,200,200)"); // inactivo (gris)
+  cornerstoneTools.toolStyle.setToolColor("rgb(200,200,200)");
 }
 if (cornerstoneTools?.toolStyle?.setActiveColor) {
-  cornerstoneTools.toolStyle.setActiveColor("rgb(0,255,0)");   // activo (verde)
+  cornerstoneTools.toolStyle.setActiveColor("rgb(0,255,0)");
 }
 
 // 3) Handles (puntos de control)
@@ -63,21 +63,15 @@ if (cornerstoneTools?.toolStyle?.setStrokeColor) {
   cornerstoneTools.toolStyle.setStrokeColor("rgb(0,255,0)");
 }
 
-// Fallback para builds donde los setters anteriores no existen (p. ej. 4.22.1)
+// Fallbacks
 if (cornerstoneTools?.store) {
   const st = cornerstoneTools.store.state || (cornerstoneTools.store.state = {});
-  // toolStyle
-  st.toolStyle = {
-    ...(st.toolStyle || {}),
-    width: st.toolStyle?.width ?? 2,
-  };
-  // toolColors (algunas builds lo agrupan así)
+  st.toolStyle = { ...(st.toolStyle || {}), width: st.toolStyle?.width ?? 2 };
   st.toolColors = {
     ...(st.toolColors || {}),
     defaultColor: st.toolColors?.defaultColor ?? "rgb(200,200,200)",
     activeColor: st.toolColors?.activeColor ?? "rgb(0,255,0)",
   };
-  // handleStyle (nombres típicos en varias subversiones)
   st.handleStyle = {
     ...(st.handleStyle || {}),
     radius: st.handleStyle?.radius ?? 6,
@@ -86,22 +80,19 @@ if (cornerstoneTools?.store) {
   };
 }
 
+
 // setupTools principal
 
 export function setupTools(element: HTMLElement) {
-  
   //Herramientas de visualización
-  
   setupZoomTool(element);
   setupPanTool(element);
   setupWindowLevelTool(element);
   setupInvertTool(element);
   setupCrosshairTool(element);
   setupRotateTool(element);
-  setupRotateTool(element);
-  
+
   //Herramientas de anotación / etiquetado
-  
   setupPointTool(element);
   setupRulerTool(element);
   setupEllipseTool(element);
@@ -111,83 +102,113 @@ export function setupTools(element: HTMLElement) {
 }
 
 
-// ZOOM TOOL
+// ZOOM TOOL 
 
 function setupZoomTool(element: HTMLElement) {
   const zoomBtn = document.getElementById("zoomBtn") as HTMLButtonElement;
   let zoomActive = false;
+  let dragging = false;
+  let lastY = 0;
 
-  zoomBtn?.addEventListener("click", () => {
-    zoomActive = !zoomActive;
-    zoomBtn.classList.toggle("active");
-    element.style.cursor = zoomActive ? "zoom-in" : "default";
+  registerTool("zoom", () => {
+    zoomActive = false;
+    dragging = false;
+    zoomBtn.classList.remove("active");
+    element.style.cursor = "default";
   });
 
-  element.addEventListener("wheel", (e: WheelEvent) => {
-    if (!zoomActive) return;
-    e.preventDefault();
+  zoomBtn?.addEventListener("click", () => {
+    if (!zoomActive) {
+      activateTool("zoom");
+      zoomActive = true;
+      zoomBtn.classList.add("active");
+      element.style.cursor = "ns-resize";
+    } else {
+      zoomActive = false;
+      zoomBtn.classList.remove("active");
+      element.style.cursor = "default";
+    }
+  });
+
+  element.addEventListener("mousedown", (e: MouseEvent) => {
+    if (!zoomActive || e.button !== 0) return;
+    dragging = true;
+    lastY = e.clientY;
+  });
+
+  element.addEventListener("mousemove", (e: MouseEvent) => {
+    if (!zoomActive || !dragging) return;
+    const deltaY = e.clientY - lastY;
+    lastY = e.clientY;
     const viewport = cornerstone.getViewport(element);
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+    const zoomFactor = deltaY < 0 ? 1.05 : 0.95;
     viewport.scale *= zoomFactor;
     cornerstone.setViewport(element, viewport);
   });
+
+  element.addEventListener("mouseup", () => (dragging = false));
+  element.addEventListener("mouseleave", () => (dragging = false));
 }
 
 
-//PAN TOOL
+// PAN TOOL
 
 function setupPanTool(element: HTMLElement) {
   const panBtn = document.getElementById("panBtn") as HTMLButtonElement;
   let panActive = false;
-  let lastPosition: { x: number; y: number } | null = null;
+  let lastPos: { x: number; y: number } | null = null;
+
+  registerTool("pan", () => {
+    panActive = false;
+    panBtn.classList.remove("active");
+    element.style.cursor = "default";
+  });
 
   panBtn?.addEventListener("click", () => {
-    panActive = !panActive;
-    panBtn.classList.toggle("active");
-    element.style.cursor = panActive ? "grab" : "default";
+    if (!panActive) {
+      activateTool("pan");
+      panActive = true;
+      panBtn.classList.add("active");
+      element.style.cursor = "grab";
+    } else {
+      panActive = false;
+      panBtn.classList.remove("active");
+      element.style.cursor = "default";
+    }
   });
 
   element.addEventListener("mousedown", (e: MouseEvent) => {
     if (!panActive) return;
-    lastPosition = { x: e.clientX, y: e.clientY };
+    lastPos = { x: e.clientX, y: e.clientY };
     element.style.cursor = "grabbing";
   });
 
   element.addEventListener("mousemove", (e: MouseEvent) => {
-    if (!panActive || !lastPosition) return;
+    if (!panActive || !lastPos) return;
     const viewport = cornerstone.getViewport(element);
-    const dx = e.clientX - lastPosition.x;
-    const dy = e.clientY - lastPosition.y;
+    const dx = e.clientX - lastPos.x;
+    const dy = e.clientY - lastPos.y;
     viewport.translation.x += dx / viewport.scale;
     viewport.translation.y += dy / viewport.scale;
     cornerstone.setViewport(element, viewport);
-    lastPosition = { x: e.clientX, y: e.clientY };
+    lastPos = { x: e.clientX, y: e.clientY };
   });
 
-  element.addEventListener("mouseup", () => {
-    if (panActive) element.style.cursor = "grab";
-    lastPosition = null;
-  });
+  element.addEventListener("mouseup", () => (lastPos = null));
+  element.addEventListener("mouseleave", () => (lastPos = null));
 }
 
 
-//WINDOW WIDTH 
+// WINDOW WIDTH / LEVEL TOOL (con botón)
 
 function setupWindowLevelTool(element: HTMLElement) {
-  // Rango clínico para mamografía (12 bits)
-  const MAMMO_RANGE = {
-    minWidth: 100,
-    maxWidth: 4095,
-    minCenter: -500,
-    maxCenter: 4500,
-  };
+  const windowBtn = document.getElementById("windowBtn") as HTMLButtonElement;
+  let windowActive = false;
 
-  // Valores iniciales típicos
   let ww = 1200;
   let wc = 600;
   let wwHudTimeout: any = null;
 
-  // HUD overlay
   const hud = document.createElement("div");
   hud.style.position = "absolute";
   hud.style.top = "10px";
@@ -219,24 +240,38 @@ function setupWindowLevelTool(element: HTMLElement) {
     wwHudTimeout = setTimeout(() => (hud.style.opacity = "0"), 1500);
   }
 
-  // Ajuste con rueda del mouse
+  registerTool("window", () => {
+    windowActive = false;
+    windowBtn.classList.remove("active");
+    element.style.cursor = "default";
+  });
+
+  windowBtn?.addEventListener("click", () => {
+    if (!windowActive) {
+      activateTool("window");
+      windowActive = true;
+      windowBtn.classList.add("active");
+      element.style.cursor = "col-resize";
+    } else {
+      windowActive = false;
+      windowBtn.classList.remove("active");
+      element.style.cursor = "default";
+    }
+  });
+
   element.addEventListener("wheel", (e: WheelEvent) => {
+    if (!windowActive) return;
     e.preventDefault();
-
-    const step = e.deltaY * -0.25; // ajuste fino y natural
-
-    // Aclarar (rueda arriba): aumentar WW, bajar WC
+    const step = e.deltaY * -0.25;
     ww += step;
     wc -= step * 0.5;
-
-    ww = Math.max(MAMMO_RANGE.minWidth, Math.min(MAMMO_RANGE.maxWidth, ww));
-    wc = Math.max(MAMMO_RANGE.minCenter, Math.min(MAMMO_RANGE.maxCenter, wc));
-
+    ww = Math.max(100, Math.min(4095, ww));
+    wc = Math.max(-500, Math.min(4500, wc));
     updateWWWC();
   });
 
-  // Doble clic → restablecer valores
   element.addEventListener("dblclick", () => {
+    if (!windowActive) return;
     ww = 1200;
     wc = 600;
     updateWWWC();
@@ -250,39 +285,57 @@ function setupInvertTool(element: HTMLElement) {
   const invertBtn = document.getElementById("invertBtn") as HTMLButtonElement;
   let invertActive = false;
 
-  invertBtn?.addEventListener("click", () => {
-    invertActive = !invertActive;
-    invertBtn.classList.toggle("active");
+  registerTool("invert", () => {
+    invertActive = false;
+    invertBtn.classList.remove("active");
+  });
 
-    const viewport = cornerstone.getViewport(element);
-    viewport.invert = !viewport.invert;
-    cornerstone.setViewport(element, viewport);
+  invertBtn?.addEventListener("click", () => {
+    if (!invertActive) {
+      activateTool("invert");
+      invertActive = true;
+      invertBtn.classList.add("active");
+      const viewport = cornerstone.getViewport(element);
+      viewport.invert = !viewport.invert;
+      cornerstone.setViewport(element, viewport);
+    } else {
+      invertActive = false;
+      invertBtn.classList.remove("active");
+    }
   });
 }
 
 
-
-//CROSSHAIR TOOL (Anclaje con clic sobre la imagen)
+// CROSSHAIR TOOL
 
 function setupCrosshairTool(element: HTMLElement) {
   const crosshairBtn = document.getElementById("crosshairBtn") as HTMLButtonElement;
   let crosshairActive = false;
   let fixedPoint: { x: number; y: number } | null = null;
 
-  // 🔘 Activar / desactivar la herramienta
-  crosshairBtn?.addEventListener("click", () => {
-    crosshairActive = !crosshairActive;
-    crosshairBtn.classList.toggle("active");
-    element.style.cursor = crosshairActive ? "crosshair" : "default";
+  registerTool("crosshair", () => {
+    crosshairActive = false;
+    fixedPoint = null;
+    crosshairBtn.classList.remove("active");
+    element.style.cursor = "default";
+    cornerstone.updateImage(element);
+  });
 
-    // 🧹 Al desactivar, limpiar la cruz
+  crosshairBtn?.addEventListener("click", () => {
     if (!crosshairActive) {
+      activateTool("crosshair");
+      crosshairActive = true;
+      crosshairBtn.classList.add("active");
+      element.style.cursor = "crosshair";
+    } else {
+      crosshairActive = false;
       fixedPoint = null;
+      crosshairBtn.classList.remove("active");
+      element.style.cursor = "default";
       cornerstone.updateImage(element);
     }
   });
 
-  //Fijar punto con clic único
   element.addEventListener("click", (e: MouseEvent) => {
     if (!crosshairActive) return;
     const coords = cornerstone.pageToPixel(element, e.clientX, e.clientY);
@@ -290,94 +343,73 @@ function setupCrosshairTool(element: HTMLElement) {
     cornerstone.updateImage(element);
   });
 
-  //Dibujar cruz fija sobre el punto seleccionado
   element.addEventListener("cornerstoneimagerendered", (evt: any) => {
     if (!crosshairActive || !fixedPoint) return;
-
-    const context = evt.detail.canvasContext.canvas.getContext("2d");
+    const ctx = evt.detail.canvasContext.canvas.getContext("2d");
     const { x, y } = cornerstone.pixelToCanvas(element, fixedPoint);
     const canvas = evt.detail.canvasContext.canvas;
-
-    context.save();
-    context.setTransform(1, 0, 0, 1, 0, 0);
-    context.strokeStyle = "rgba(0, 255, 0, 0.9)"; // verde clínico
-    context.lineWidth = 1.5;
-
-    // ➕ Líneas cruzadas
-    context.beginPath();
-    context.moveTo(x, 0);
-    context.lineTo(x, canvas.height);
-    context.moveTo(0, y);
-    context.lineTo(canvas.width, y);
-    context.stroke();
-
-    context.restore();
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.strokeStyle = "rgba(0,255,0,0.9)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, canvas.height);
+    ctx.moveTo(0, y);
+    ctx.lineTo(canvas.width, y);
+    ctx.stroke();
+    ctx.restore();
   });
 }
 
 
-// ROTATE TOOL 
+// ROTATE TOOL
 
 function setupRotateTool(element: HTMLElement) {
-  const bindRotate = () => {
-    const rotateBtn = document.getElementById("rotateBtn") as HTMLButtonElement | null;
-    if (!rotateBtn) {
-      console.warn("RotateTool: botón #rotateBtn no encontrado todavía. Reintentando en DOMContentLoaded…");
-      return false;
-    }
+  const rotateBtn = document.getElementById("rotateBtn") as HTMLButtonElement;
+  let rotateActive = false;
+  let lastX: number | null = null;
 
-    let rotateActive = false;
-    let lastX: number | null = null;
+  registerTool("rotate", () => {
+    rotateActive = false;
+    lastX = null;
+    rotateBtn.classList.remove("active");
+    element.style.cursor = "default";
+  });
 
-    rotateBtn.addEventListener("click", () => {
-      rotateActive = !rotateActive;
-      rotateBtn.classList.toggle("active", rotateActive);
-      element.style.cursor = rotateActive ? "grab" : "default";
-      if (!rotateActive) lastX = null;
-      console.log(`RotateTool: ${rotateActive ? "ACTIVA" : "INACTIVA"}`);
-    });
-
-    element.addEventListener("mousedown", (e: MouseEvent) => {
-      if (!rotateActive) return;
-      lastX = e.clientX;
-      element.style.cursor = "grabbing";
-    });
-
-    element.addEventListener("mousemove", (e: MouseEvent) => {
-      if (!rotateActive || lastX === null) return;
-      const dx = e.clientX - lastX;
-      lastX = e.clientX;
-
-      const viewport = cornerstone.getViewport(element);
-      if (!viewport) return;
-
-      const sensitivity = 0.4; // ajusta si quieres más/menos “suave”
-      viewport.rotation = (viewport.rotation + dx * sensitivity) % 360;
-      cornerstone.setViewport(element, viewport);
-    });
-
-    element.addEventListener("mouseup", () => {
-      if (!rotateActive) return;
-      lastX = null;
+  rotateBtn?.addEventListener("click", () => {
+    if (!rotateActive) {
+      activateTool("rotate");
+      rotateActive = true;
+      rotateBtn.classList.add("active");
       element.style.cursor = "grab";
-    });
-
-    console.log("RotateTool: listeners vinculados");
-    return true;
-  };
-
-  // Intento inmediato
-  const okNow = bindRotate();
-  if (okNow) return;
-
-  // Fallback: si aún no existe el botón, nos suscribimos a DOMContentLoaded
-  const onReady = () => {
-    if (bindRotate()) {
-      document.removeEventListener("DOMContentLoaded", onReady);
+    } else {
+      rotateActive = false;
+      rotateBtn.classList.remove("active");
+      element.style.cursor = "default";
     }
-  };
-  document.addEventListener("DOMContentLoaded", onReady);
+  });
+
+  element.addEventListener("mousedown", (e: MouseEvent) => {
+    if (!rotateActive) return;
+    lastX = e.clientX;
+    element.style.cursor = "grabbing";
+  });
+
+  element.addEventListener("mousemove", (e: MouseEvent) => {
+    if (!rotateActive || lastX === null) return;
+    const dx = e.clientX - lastX;
+    lastX = e.clientX;
+    const viewport = cornerstone.getViewport(element);
+    const sensitivity = 0.4;
+    viewport.rotation = (viewport.rotation + dx * sensitivity) % 360;
+    cornerstone.setViewport(element, viewport);
+  });
+
+  element.addEventListener("mouseup", () => (lastX = null));
+  element.addEventListener("mouseleave", () => (lastX = null));
 }
+
 
 
 
