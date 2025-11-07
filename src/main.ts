@@ -22,7 +22,7 @@ if (!element) throw new Error("Element not found");
 
 cornerstone.enable(element);
 
-const imageId = "wadouri:/dicom/Prueba 1.dcm";
+const imageId = "wadouri:/dicom/1-1.dcm";
 
 cornerstone
   .loadImage(imageId)
