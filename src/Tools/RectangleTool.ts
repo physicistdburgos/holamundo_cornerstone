@@ -138,19 +138,19 @@ export function setupRectangleTool(element: HTMLElement) {
       ctx.strokeRect(startCanvas.x, startCanvas.y, rectWidth, rectHeight);
 
       // Handles (solo contorno)
+      
       const handleSize = 5;
-      const corners = [
-        { x: startCanvas.x, y: startCanvas.y },
-        { x: endCanvas.x, y: startCanvas.y },
-        { x: startCanvas.x, y: endCanvas.y },
-        { x: endCanvas.x, y: endCanvas.y },
+      const handles = [
+        { x: startCanvas.x, y: startCanvas.y }, // punto inicial
+        { x: endCanvas.x, y: endCanvas.y },     // punto final (vértice opuesto)
       ];
       ctx.lineWidth = 1.5;
-      corners.forEach((c) => {
+      handles.forEach((h) => {
         ctx.beginPath();
-        ctx.arc(c.x, c.y, handleSize, 0, 2 * Math.PI);
+        ctx.arc(h.x, h.y, handleSize, 0, 2 * Math.PI);
         ctx.stroke();
       });
+
 
       // Etiquetas y línea punteada dinámica
       if (rect.stats) {
